@@ -24,7 +24,7 @@ async function createCheckoutSession(formData, sessionId) {
       {
         price_data: {
           unit_amount: totalAmount * 100,
-          currency: 'aed',
+          currency: 'usd',
           product_data: {
             name: `${formData.type} Flight Reservation`,
           },
