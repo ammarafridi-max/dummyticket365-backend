@@ -6,14 +6,15 @@ const formatAmadeusDate = require('../utils/formatAmadeusDate');
 
 exports.addAirlineInfoByCode = async (req, res) => {
   try {
-    const airlineCode = req.params.airlineCode;
+    const { airlineCode } = req.params;
 
-    const exists = await Airline.findOne({ iataCode: airlineCode });
+    const exsits = await Airline.findOne({ iataCode: airlineCode });
 
-    if (exists)
-      return res
-        .status(402)
-        .json({ message: 'This airline data already exists' });
+    if (exsits) {
+      return res.status(402).json({
+        message: 'This airline data already exists',
+      });
+    }
 
     const response = await amadeus.referenceData.airlines.get({
       airlineCodes: airlineCode,
@@ -75,8 +76,7 @@ exports.fetchFlightsList = async (req, res) => {
       ...(type === 'Return' && returnDate ? { returnDate } : {}),
     };
 
-    const response =
-      await amadeus.shopping.flightOffersSearch.get(flightSearchParams);
+    const response = await fetchFlights(flightSearchParams);
     if (!response?.data) {
       return res.status(404).json({ message: 'No flights available' });
     }
@@ -90,11 +90,9 @@ exports.fetchFlightsList = async (req, res) => {
     const airlineCodes = [
       ...new Set(flights.flatMap((flight) => flight.validatingAirlineCodes)),
     ];
-
     const airlinesInDb = await Airline.find({
       iataCode: { $in: airlineCodes },
     });
-
     const airlinesInDbMap = new Map(
       airlinesInDb.map((airline) => [airline.iataCode, airline])
     );
@@ -102,7 +100,6 @@ exports.fetchFlightsList = async (req, res) => {
     const missingAirlineCodes = airlineCodes.filter(
       (code) => !airlinesInDbMap.has(code)
     );
-
     let newAirlineDetails = [];
 
     if (missingAirlineCodes.length > 0) {
@@ -144,6 +141,10 @@ exports.fetchFlightsList = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 };
+
+async function fetchFlights(params) {
+  return amadeus.shopping.flightOffersSearch.get(params);
+}
 
 function attachAirlineDetails(flights, airlinesMap) {
   return flights.map((flight) => {

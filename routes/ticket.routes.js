@@ -11,10 +11,7 @@ router
   .post(ticketController.createTicketRequest);
 
 router.post('/buy-ticket', validateSessionId, ticketController.buyTicket);
-
 router.post('/webhook', ticketController.listenStripeEvents);
-
-router.get('/:sessionId/payment-info', ticketController.getPaymentInfo);
 
 router
   .route('/:sessionId')

@@ -45,18 +45,3 @@ exports.updateStatus = async (req, res) => {
       .json({ status: 'fail', message: 'Server error. Could not delete.' });
   }
 };
-
-// exports.updateUser = async (req, res) => {
-//   try {
-//     const { username } = req.params;
-//     const userData = req.body;
-//     const newPassword = req.body.newPassword;
-//     if (newPassword) {
-//       const salt = await bcrypt.genSalt(saltRounds);
-//       const hashedNewPassword = await bcrypt.hash(newPassword, salt);
-//       userData.password = hashedNewPassword;
-//     }
-//   } catch (error) {
-//     res.status(500).json({ status: 'fail', message: 'Server error. Could not delete user.' });
-//   }
-// };

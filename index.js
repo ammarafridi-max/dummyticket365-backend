@@ -1,9 +1,17 @@
+// ---------- IMPORTS ----------
 require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const app = express();
+const xss = require('xss-clean');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
+const rateLimit = require('express-rate-limit');
+
+// Custom imports
+const AppError = require('./utils/appError');
+const globalErrorHandler = require('./controllers/error.controller');
 const ticketRoutes = require('./routes/ticket.routes');
 const airportRoutes = require('./routes/airport.routes');
 const flightRoutes = require('./routes/flight.routes');
@@ -11,31 +19,43 @@ const adminRoutes = require('./routes/admin.routes');
 const userRoutes = require('./routes/user.routes');
 const roleRoutes = require('./routes/role.routes');
 
-app.use(express.urlencoded({ extended: false }));
+// ---------- INITIALIZATION ----------
+const app = express();
 
-// const cors = {
-//   origin: [process.env.FRONTEND_URL, process.env.ADMIN_URL],
-//   default: process.env.FRONTEND_URL,
-// };
+// ---------- ERROR HANDLING ----------
+process.on('uncaughtException', (err) => {
+  console.log('UNCAUGHT EXCEPTION! 💥 Shutting down...');
+  console.log(err.name, err.message);
+  process.exit(1);
+});
 
-// app.all('*', function (req, res, next) {
-//   const origin = cors.origin.includes(req.header('origin')) ? req.headers.origin : cors.default;
-//   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-//   res.header('Access-Control-Allow-Origin', origin);
-//   res.header(
-//     'Access-Control-Allow-Headers',
-//     'Origin, X-Session-ID, X-Requested-With, Content-Type, Accept'
-//   );
-//   next();
-// });
+// ---------- MIDDLEWARE CONFIGURATION ----------
+// Security middleware
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
+app.use(xss());
+app.use(mongoSanitize());
 
+// Rate limiting
+const limiter = rateLimit({
+  max: 500,
+  windowMs: 60 * 60 * 1000,
+  message: 'Too many requests from this IP, please try again in an hour!',
+});
+app.use('/api', limiter);
+
+// CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [process.env.FRONTEND_URL, process.env.ADMIN_URL];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new AppError('Not allowed by CORS', 403));
     }
   },
   methods: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
@@ -45,21 +65,27 @@ const corsOptions = {
     'X-Requested-With',
     'Content-Type',
     'Accept',
+    'Authorization',
   ],
+  exposedHeaders: ['Cross-Origin-Resource-Policy'],
   credentials: true,
 };
-
 app.use(cors(corsOptions));
 
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+// Body parsing
+app.use('/api/ticket/webhook', express.raw({ type: 'application/json' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
-app.use((req, res, next) => {
-  if (req.originalUrl === '/api/ticket/webhook') {
-    express.raw({ type: 'application/json' })(req, res, next);
-  } else {
-    express.json({ limit: '50mb' })(req, res, next);
-  }
-});
+// Static files
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, 'public/uploads'), {
+    setHeaders: (res, path) => {
+      res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  })
+);
 
 // ---------- DATABASE CONNECTION ----------
 const connectDB = async () => {
@@ -71,7 +97,6 @@ const connectDB = async () => {
     process.exit(1);
   }
 };
-
 connectDB();
 
 // ---------- ROUTES ----------
@@ -82,6 +107,26 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/users', userRoutes);
 
-app.listen(process.env.PORT, () => {
-  console.log(`Server running on port ${process.env.PORT}`);
+// 404 handler
+app.all('*', (req, res, next) => {
+  next(
+    new AppError(`Route is not defined. Cannot find ${req.originalUrl}.`, 404)
+  );
+});
+
+// Global error handler
+app.use(globalErrorHandler);
+
+// ---------- SERVER STARTUP ----------
+const server = app.listen(process.env.PORT || 3001, () => {
+  console.log(`Server running on port ${process.env.PORT || 3001}`);
+});
+
+// Unhandled rejection handler
+process.on('unhandledRejection', (err) => {
+  console.log('UNHANDLED REJECTION! 💥 Shutting down...');
+  console.log(err);
+  server.close(() => {
+    process.exit(1);
+  });
 });
