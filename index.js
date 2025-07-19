@@ -1,5 +1,5 @@
 // ---------- IMPORTS ----------
-require('dotenv').config();
+require('dotenv').config({ path: `.env.${process.env.NODE_ENV}` });
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -13,11 +13,7 @@ const rateLimit = require('express-rate-limit');
 const AppError = require('./utils/appError');
 const globalErrorHandler = require('./controllers/error.controller');
 const ticketRoutes = require('./routes/ticket.routes');
-const airportRoutes = require('./routes/airport.routes');
-const flightRoutes = require('./routes/flight.routes');
-const adminRoutes = require('./routes/admin.routes');
 const userRoutes = require('./routes/user.routes');
-const roleRoutes = require('./routes/role.routes');
 
 // ---------- INITIALIZATION ----------
 const app = express();
@@ -51,7 +47,11 @@ app.use('/api', limiter);
 // CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [process.env.FRONTEND_URL, process.env.ADMIN_URL];
+    const allowedOrigins = [
+      process.env.DT365_FRONTEND,
+      process.env.DT365_ADMIN,
+      process.env.VIEWTRIP_BACKEND,
+    ];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -87,10 +87,28 @@ app.use(
   })
 );
 
+app.use(
+  '/qr-codes',
+  express.static(path.join(__dirname, 'public/qr-codes'), {
+    setHeaders: (res, path) => {
+      res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  })
+);
+
+app.use(
+  '/reservations',
+  express.static(path.join(__dirname, 'public/reservations'), {
+    setHeaders: (res, path) => {
+      res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  })
+);
+
 // ---------- DATABASE CONNECTION ----------
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.DB_URL);
+    await mongoose.connect(process.env.MONGO_URI);
     console.log('Connected to DB successfully');
   } catch (error) {
     console.error(`Error connecting to DB: ${error.message}`);
@@ -101,10 +119,6 @@ connectDB();
 
 // ---------- ROUTES ----------
 app.use('/api/ticket', ticketRoutes);
-app.use('/api/airports', airportRoutes);
-app.use('/api/flights', flightRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/roles', roleRoutes);
 app.use('/api/users', userRoutes);
 
 // 404 handler
@@ -119,7 +133,9 @@ app.use(globalErrorHandler);
 
 // ---------- SERVER STARTUP ----------
 const server = app.listen(process.env.PORT || 3001, () => {
-  console.log(`Server running on port ${process.env.PORT || 3001}`);
+  console.log(
+    `Server running on port ${process.env.PORT || 3001} (${process.env.NODE_ENV})`
+  );
 });
 
 // Unhandled rejection handler

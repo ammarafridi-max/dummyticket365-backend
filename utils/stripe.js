@@ -33,8 +33,8 @@ async function createCheckoutSession(formData, sessionId) {
       },
     ],
     mode: 'payment',
-    success_url: `${process.env.FRONTEND_URL}/payment-successful?sessionId=${sessionId}`,
-    cancel_url: `${process.env.FRONTEND_URL}/booking/review-details`,
+    success_url: `${process.env.DT365_FRONTEND}/payment-successful?sessionId=${sessionId}`,
+    cancel_url: `${process.env.DT365_FRONTEND}/booking/review-details`,
   });
 
   return session;

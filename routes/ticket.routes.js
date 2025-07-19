@@ -1,8 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const ticketController = require('../controllers/ticket.controller');
-const validateSessionId = require('../middleware/verify-session');
-
 const router = express.Router();
 
 router
@@ -10,12 +8,12 @@ router
   .get(ticketController.getAllTickets)
   .post(ticketController.createTicketRequest);
 
-router.post('/buy-ticket', validateSessionId, ticketController.buyTicket);
-router.post('/webhook', ticketController.listenStripeEvents);
+router.post('/buy-ticket', ticketController.createStripePaymentUrl);
+router.post('/webhook', ticketController.stripePaymentWebhook);
 
 router
   .route('/:sessionId')
-  .get(ticketController.fetchFormDetails)
+  .get(ticketController.getTicket)
   .delete(ticketController.deleteTicket)
   .patch(ticketController.updateStatus);
 
