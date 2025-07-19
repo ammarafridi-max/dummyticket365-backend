@@ -229,7 +229,7 @@ const adminFormSubmissionTemplate = ({
         </tr>
         <tr>
           <td><strong>Departure Flight:</strong></td>
-          <td><p>${departureFlight}</p></td>
+          <td><p>${departureFlight.segments[0].carrierCode} ${departureFlight.segments[0].flightNumber}</p></td>
         </tr>
         <tr>
           <td><strong>Returning On:</strong></td>
@@ -237,7 +237,7 @@ const adminFormSubmissionTemplate = ({
         </tr>
         <tr>
           <td><strong>Return Flight:</strong></td>
-          <td><p>${returnFlight === null ? 'Not Specified' : returnFlight}</p></td>
+          <td><p>${returnFlight === null ? 'Not Specified' : `${returnFlight.segments[0].carrierCode} ${returnFlight.segments[0].flightNumber}`}</p></td>
         </tr>
         ${
           message
