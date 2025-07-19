@@ -213,6 +213,6 @@ async function createReservation(ticket) {
 
     return data.data.reservation;
   } catch (err) {
-    console.log(err.message);
+    console.error(err.message);
   }
 }
