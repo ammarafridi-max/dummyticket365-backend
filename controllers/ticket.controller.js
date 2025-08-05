@@ -183,15 +183,15 @@ async function updatePayment(sessionId, currency, amount) {
 
   if (!doc) throw new Error('Ticket not found for session ID');
 
-  const reservation = await createReservation(doc);
+  // const reservation = await createReservation(doc);
 
-  if (reservation?.pnr) {
-    doc = await DummyTicket.findByIdAndUpdate(
-      doc._id,
-      { $set: { pnr: reservation.pnr } },
-      { new: true }
-    );
-  }
+  // if (reservation?.pnr) {
+  //   doc = await DummyTicket.findByIdAndUpdate(
+  //     doc._id,
+  //     { $set: { pnr: reservation.pnr } },
+  //     { new: true }
+  //   );
+  // }
 
   return doc;
 }
