@@ -14,6 +14,8 @@ const AppError = require('./utils/appError');
 const globalErrorHandler = require('./controllers/error.controller');
 const ticketRoutes = require('./routes/ticket.routes');
 const userRoutes = require('./routes/user.routes');
+const airportRoutes = require('./routes/airport.routes');
+const flightRoutes = require('./routes/flight.routes');
 
 // ---------- INITIALIZATION ----------
 const app = express();
@@ -120,6 +122,8 @@ connectDB();
 // ---------- ROUTES ----------
 app.use('/api/ticket', ticketRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/flights', flightRoutes);
+app.use('/api/airports', airportRoutes);
 
 // 404 handler
 app.all('*', (req, res, next) => {
