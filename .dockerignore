@@ -1,0 +1,30 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Environment files
+.env
+.env.*
+!.env.example  # keep a sample file if you have one
+
+# Build / cache
+*.log
+dist
+build
+tmp
+.cache
+
+# Version control
+.git
+.gitignore
+
+# Docker + compose files (they exist outside container)
+Dockerfile
+docker-compose.yml
+docker-compose*.yml
+
+# System / editor junk
+.DS_Store
+.vscode
+.idea
