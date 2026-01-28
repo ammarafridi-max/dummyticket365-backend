@@ -22,8 +22,8 @@ app.use(
     origin: [
       'http://localhost:5173',
       'http://localhost:5174',
-      'https://www.mydummyticket.ae',
-      'https://admin.mydummyticket.ae',
+      'https://www.dummyticket365.com',
+      'https://admin.dummyticket365.com',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
