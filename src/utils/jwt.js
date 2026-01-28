@@ -12,9 +12,6 @@ exports.createCookieOptions = () => {
     httpOnly: true,
     sameSite: isProd ? 'none' : 'lax',
     secure: isProd,
-    expires: new Date(
-      Date.now() +
-        Number(process.env.JWT_COOKIE_EXPIRES_IN) * 24 * 60 * 60 * 1000
-    ),
+    expires: new Date(Date.now() + Number(process.env.JWT_COOKIE_EXPIRES_IN) * 24 * 60 * 60 * 1000),
   };
 };

@@ -1,22 +1,10 @@
-const cache = require('../utils/cache');
 const Blog = require('../models/Blog');
 const slugify = require('slugify');
 const AppError = require('../utils/appError');
-const {
-  uploadImageToCloudinary,
-  deleteCloudinaryFile,
-} = require('../utils/cloudinary');
-const {
-  generateUniqueSlug,
-  estimateReadingTime,
-} = require('../utils/blogHelper');
+const { uploadImageToCloudinary, deleteCloudinaryFile } = require('../utils/cloudinary');
+const { generateUniqueSlug, estimateReadingTime } = require('../utils/blogHelper');
 
 exports.getBlogs = async ({ page, limit, status, tag, search }) => {
-  const cacheKey = `blogs:${page}:${limit}:${status || 'all'}:${tag || 'all'}:${search || ''}`;
-
-  const cached = await cache.get(cacheKey);
-  if (cached) return cached;
-
   const skip = (page - 1) * limit;
   const filter = {};
 
@@ -32,27 +20,16 @@ exports.getBlogs = async ({ page, limit, status, tag, search }) => {
   }
 
   const [blogs, total] = await Promise.all([
-    Blog.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate('author'),
+    Blog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('author'),
     Blog.countDocuments(filter),
   ]);
 
   const result = { blogs, total };
 
-  await cache.set(cacheKey, result);
-
   return result;
 };
 
 exports.getBlogBySlug = async (slug) => {
-  const cacheKey = `blog:${slug}`;
-
-  const cached = await cache.get(cacheKey);
-  if (cached) return cached;
-
   const blog = await Blog.findOne({
     slug,
     status: 'published',
@@ -60,16 +37,7 @@ exports.getBlogBySlug = async (slug) => {
 
   if (!blog) return null;
 
-  cache.set(cacheKey, blog);
   return blog;
-};
-
-exports.clearBlogCache = () => {
-  cache.keys().forEach((key) => {
-    if (key.startsWith('blog:') || key.startsWith('blogs:')) {
-      cache.del(key);
-    }
-  });
 };
 
 exports.validateBlog = (req, { requireCoverImage = true } = {}) => {
@@ -100,7 +68,7 @@ exports.saveCoverImage = async (req, uniqueSlug, blog = null) => {
     }
 
     const slug = blog?.slug || uniqueSlug;
-    const folderName = `mdt/mdt_blog/${slug}`.replace(/\s+/g, '_');
+    const folderName = `dt365/dt365_blog/${slug}`.replace(/\s+/g, '_');
 
     return await uploadImageToCloudinary(req.file.buffer, folderName);
   } catch (err) {

@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
+const AppError = require('../utils/appError')
 const DummyTicket = require('../models/DummyTicket');
-const stripe = require('../utils/stripe');
 const { v4: uuidv4 } = require('uuid');
-const { adminFormSubmissionEmail, adminPaymentCompletionEmail, laterDateDeliveryEmail } = require('../utils/email');
+const { ticketFormSubmissionEmail, ticketPaymentCompletionEmail, ticketLaterDateDeliveryEmail } = require('./notification.service')
 const paymentService = require('./payment.service');
 
 function buildSearchFilter(search) {
@@ -84,8 +84,9 @@ exports.getAllTickets = async (query) => {
 exports.getTicketBySessionId = (sessionId) => DummyTicket.findOne({ sessionId }).populate('handledBy');
 
 exports.updateOrderStatus = async (sessionId, userId, orderStatus) => {
+
   if (!mongoose.Types.ObjectId.isValid(userId)) {
-    throw new Error('INVALID_USER_ID');
+    throw new AppError('INVALID_USER_ID');
   }
 
   return DummyTicket.findOneAndUpdate(
@@ -100,7 +101,9 @@ exports.updateOrderStatus = async (sessionId, userId, orderStatus) => {
   ).populate('handledBy');
 };
 
-exports.deleteTicket = (sessionId) => DummyTicket.findOneAndDelete({ sessionId });
+exports.deleteTicket = async (sessionId) => {
+  await DummyTicket.findOneAndDelete({ sessionId })
+}
 
 exports.createTicketRequest = async (payload) => {
   const ticket = await DummyTicket.create({
@@ -110,7 +113,7 @@ exports.createTicketRequest = async (payload) => {
 
   const totalQty = ticket.quantity.adults + ticket.quantity.children + ticket.quantity.infants;
 
-  await adminFormSubmissionEmail({
+  await ticketFormSubmissionEmail({
     type: ticket.type,
     from: ticket.from,
     to: ticket.to,
@@ -137,13 +140,15 @@ exports.createTicketRequest = async (payload) => {
 exports.createStripePaymentUrl = async (formData) => {
   return paymentService.createCheckoutSession({
     amount: formData.totalAmount,
-    currency: 'aed',
+    currency: 'usd',
     productName: `${formData.type} Flight Reservation`,
     customerEmail: formData.email,
-    successUrl: `${process.env.MDT_FRONTEND}/payment-successful?sessionId=${formData.sessionId}`,
-    cancelUrl: `${process.env.MDT_FRONTEND}/booking/review-details`,
+    successUrl: `${process.env.DT365_FRONTEND}/payment-successful?sessionId=${formData.sessionId}`,
+    cancelUrl: `${process.env.DT365_FRONTEND}/booking/review-details`,
     metadata: {
+      productType: 'ticket',
       entity: 'DUMMY_TICKET',
+      customer: formData.leadPassenger,
       sessionId: formData.sessionId,
       from: formData.from,
       to: formData.to,
@@ -155,8 +160,10 @@ exports.createStripePaymentUrl = async (formData) => {
 };
 
 exports.handleStripeSuccess = async (session) => {
+  if (session.payment_status !== 'paid') return;
+
   const sessionId = session.metadata.sessionId;
-  const currency = session.currency.toUpperCase();
+  const currency = (session.currency || 'aed').toUpperCase();
   const amount = Number((session.amount_total / 100).toFixed(2));
 
   const ticket = await DummyTicket.findOneAndUpdate(
@@ -174,14 +181,14 @@ exports.handleStripeSuccess = async (session) => {
   if (!ticket) return;
 
   if (!ticket.ticketDelivery.immediate) {
-    await laterDateDeliveryEmail({
+    await ticketLaterDateDeliveryEmail({
       to: ticket.email,
       passenger: ticket.passengers?.[0]?.firstName || 'Customer',
       deliveryDate: ticket.ticketDelivery.deliveryDate,
     });
   }
 
-  await adminPaymentCompletionEmail({
+  await ticketPaymentCompletionEmail({
     type: ticket.type,
     from: ticket.from,
     to: ticket.to,

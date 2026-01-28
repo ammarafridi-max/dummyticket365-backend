@@ -4,8 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 const PassengerSchema = new mongoose.Schema({
   type: String,
   title: String,
-  firstName: String,
-  lastName: String,
+  firstName: { type: String, trim: true },
+  lastName: { type: String, trim: true },
 });
 
 const SegmentSchema = new mongoose.Schema({
@@ -48,7 +48,7 @@ const DummyTicketSchema = mongoose.Schema(
       code: { type: String },
       digits: { type: String },
     },
-    pnr: { type: String, unique: true },
+    pnr: { type: String },
     from: { type: String, required: true },
     to: { type: String, required: true },
     departureDate: { type: String, required: true },
@@ -75,7 +75,7 @@ const DummyTicketSchema = mongoose.Schema(
     },
     flightDetails: {
       departureFlight: FlightSchema,
-      returnFlight: FlightSchema,
+      returnFlight: { type: FlightSchema, default: null },
     },
     totalAmount: { type: Number },
     amountPaid: {
@@ -84,13 +84,16 @@ const DummyTicketSchema = mongoose.Schema(
     },
     orderStatus: {
       type: String,
-      enum: ['PENDING', 'DELIVERED', 'CONTACTED'],
-      default: 'PENDING',
+      enum: ['PENDING', 'DELIVERED', 'PROGRESS'],
     },
     handledBy: { type: mongoose.Schema.ObjectId, ref: 'User', default: null },
   },
 
-  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  },
 );
 
 DummyTicketSchema.virtual('leadPassenger').get(function () {

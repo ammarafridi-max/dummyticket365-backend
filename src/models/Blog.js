@@ -56,7 +56,7 @@ const blogSchema = new mongoose.Schema(
       type: Date,
     },
   },
-  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } },
 );
 
 blogSchema.index({ createdAt: -1 });

@@ -59,9 +59,15 @@ const strictOptions = {
 };
 
 module.exports = (req, res, next) => {
-  const isRichTextRoute = richTextRoutes.some((route) =>
-    req.originalUrl.startsWith(route)
-  );
+  if (req.originalUrl.startsWith('/api/webhook')) {
+    return next();
+  }
+
+  if (Buffer.isBuffer(req.body)) {
+    return next();
+  }
+
+  const isRichTextRoute = richTextRoutes.some((route) => req.originalUrl.startsWith(route));
 
   if (!req.body) return next();
 

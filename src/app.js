@@ -6,7 +6,8 @@ const cookieParser = require('cookie-parser');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-const { stripePaymentWebhook } = require('./controllers/ticket.controller');
+
+const { stripeWebhook } = require('./controllers/stripeWebhook.controller')
 const AppError = require('./utils/appError');
 const globalErrorHandler = require('./error/error.controller');
 const indexRoutes = require('./routes/index.routes');
@@ -14,35 +15,24 @@ const indexRoutes = require('./routes/index.routes');
 const app = express();
 app.set('trust proxy', 1);
 
-app.post(
-  '/api/ticket/webhook',
-  express.raw({ type: 'application/json' }),
-  stripePaymentWebhook
-);
+app.post('/api/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
 app.use(
   cors({
     origin: [
       'http://localhost:5173',
       'http://localhost:5174',
-      'https://www.dummyticket365.com',
-      'https://admin.dummyticket365.com',
+      'https://www.mydummyticket.ae',
+      'https://admin.mydummyticket.ae',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'Access-Control-Allow-Origin',
-      'x-session-id',
-    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Origin', 'x-session-id'],
     exposedHeaders: ['Set-Cookie'],
-  })
+  }),
 );
 
-app.use(
-  helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false })
-);
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(compression());
 app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
@@ -56,20 +46,20 @@ const apiLimiter = rateLimit({
 });
 
 app.use('/api', (req, res, next) => {
-  if (req.originalUrl.includes('/ticket/webhook')) return next();
+  if (req.originalUrl.includes('/webhook')) return next();
   apiLimiter(req, res, next);
 });
 
 app.use('/api', indexRoutes);
 
-['uploads', 'qr-codes', 'reservations'].forEach((dir) => {
+['uploads'].forEach((dir) => {
   app.use(
     `/${dir}`,
     express.static(path.join(__dirname, `public/${dir}`), {
       setHeaders: (res) => {
         res.set('Cross-Origin-Resource-Policy', 'cross-origin');
       },
-    })
+    }),
   );
 });
 

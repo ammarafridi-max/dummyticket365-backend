@@ -57,21 +57,11 @@ exports.getBlogPostById = catchAsync(async (req, res, next) => {
 });
 
 exports.createBlogPost = catchAsync(async (req, res) => {
-  const {
-    title,
-    slug: customSlug,
-    content,
-    excerpt,
-    status,
-    tags,
-    metaTitle,
-    metaDescription,
-  } = req.body;
+  const { title, slug: customSlug, content, excerpt, status, tags, metaTitle, metaDescription } = req.body;
 
   blogService.validateBlog(req, { requireCoverImage: true });
 
-  const { uniqueSlug, readingTime } =
-    await blogService.generateSlugAndReadingTime(customSlug, title, content);
+  const { uniqueSlug, readingTime } = await blogService.generateSlugAndReadingTime(customSlug, title, content);
 
   const normalizedTags = blogService.normalizeTags(tags);
   const coverImageUrl = await blogService.saveCoverImage(req, uniqueSlug);
@@ -92,7 +82,6 @@ exports.createBlogPost = catchAsync(async (req, res) => {
   });
 
   await blog.populate('author');
-  blogService.clearBlogCache();
 
   res.status(201).json({
     status: 'success',
@@ -120,22 +109,14 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
     metaDescription: req.body.metaDescription,
   };
 
-  Object.keys(updateData).forEach(
-    (key) => updateData[key] === undefined && delete updateData[key]
-  );
+  Object.keys(updateData).forEach((key) => updateData[key] === undefined && delete updateData[key]);
 
-  updateData.coverImageUrl = await blogService.saveCoverImage(
-    req,
-    blog.slug,
-    blog
-  );
+  updateData.coverImageUrl = await blogService.saveCoverImage(req, blog.slug, blog);
 
   const updatedBlog = await Blog.findByIdAndUpdate(req.params.id, updateData, {
     new: true,
     runValidators: true,
   }).populate('author');
-
-  blogService.clearBlogCache();
 
   res.status(200).json({
     status: 'success',
@@ -157,7 +138,6 @@ exports.deleteBlogPost = catchAsync(async (req, res, next) => {
   }
 
   await Blog.findByIdAndDelete(req.params.id);
-  blogService.clearBlogCache();
 
   res.status(204).json({
     status: 'success',
@@ -184,7 +164,6 @@ exports.duplicateBlogPost = catchAsync(async (req, res, next) => {
   blogObj.status = 'draft';
 
   const duplicated = await Blog.create(blogObj);
-  blogService.clearBlogCache();
 
   res.status(201).json({
     status: 'success',
@@ -201,10 +180,8 @@ exports.publishBlog = catchAsync(async (req, res) => {
       publishedAt: new Date(),
       publisher: req.user._id,
     },
-    { new: true, runValidators: true }
+    { new: true, runValidators: true },
   );
-
-  blogService.clearBlogCache();
 
   res.status(200).json({
     status: 'success',
