@@ -61,7 +61,7 @@ const blogSchema = new mongoose.Schema(
 
 blogSchema.index({ createdAt: -1 });
 
-blogSchema.pre('save', function (next) {
+blogSchema.pre('save', function () {
   if (this.status === 'published' && !this.publishedAt) {
     this.publishedAt = new Date();
   }
@@ -69,8 +69,6 @@ blogSchema.pre('save', function (next) {
   if (this.status === 'draft') {
     this.publishedAt = null;
   }
-
-  next();
 });
 
 module.exports = mongoose.model('Blog', blogSchema);

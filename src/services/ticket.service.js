@@ -1,9 +1,12 @@
 const mongoose = require('mongoose');
-const AppError = require('../utils/appError')
+const AppError = require('../utils/appError');
 const DummyTicket = require('../models/DummyTicket');
+const { stripe } = require('../utils/stripe');
 const { v4: uuidv4 } = require('uuid');
-const { ticketFormSubmissionEmail, ticketPaymentCompletionEmail, ticketLaterDateDeliveryEmail } = require('./notification.service')
+const { ticketPaymentCompletionEmail, ticketLaterDateDeliveryEmail } = require('./notification.service');
 const paymentService = require('./payment.service');
+// const { capitalCase } = require('change-case');
+// const { createContact, getContact } = require('../utils/brevo');
 
 function buildSearchFilter(search) {
   if (!search) return {};
@@ -84,12 +87,20 @@ exports.getAllTickets = async (query) => {
 exports.getTicketBySessionId = (sessionId) => DummyTicket.findOne({ sessionId }).populate('handledBy');
 
 exports.updateOrderStatus = async (sessionId, userId, orderStatus) => {
+  if (!orderStatus) {
+    throw new AppError('Order status is required', 400);
+  }
+
+  const allowedStatuses = ['PENDING', 'DELIVERED', 'PROGRESS', 'REFUNDED'];
+  if (!allowedStatuses.includes(orderStatus)) {
+    throw new AppError('Invalid order status', 400);
+  }
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     throw new AppError('INVALID_USER_ID');
   }
 
-  return DummyTicket.findOneAndUpdate(
+  const updated = await DummyTicket.findOneAndUpdate(
     { sessionId },
     {
       $set: {
@@ -99,11 +110,20 @@ exports.updateOrderStatus = async (sessionId, userId, orderStatus) => {
     },
     { new: true },
   ).populate('handledBy');
+
+  if (!updated) {
+    throw new AppError('Ticket not found', 404);
+  }
+
+  return updated;
 };
 
 exports.deleteTicket = async (sessionId) => {
-  await DummyTicket.findOneAndDelete({ sessionId })
-}
+  const deleted = await DummyTicket.findOneAndDelete({ sessionId });
+  if (!deleted) {
+    throw new AppError('Ticket not found', 404);
+  }
+};
 
 exports.createTicketRequest = async (payload) => {
   const ticket = await DummyTicket.create({
@@ -111,28 +131,15 @@ exports.createTicketRequest = async (payload) => {
     sessionId: uuidv4(),
   });
 
-  const totalQty = ticket.quantity.adults + ticket.quantity.children + ticket.quantity.infants;
-
-  await ticketFormSubmissionEmail({
-    type: ticket.type,
-    from: ticket.from,
-    to: ticket.to,
-    submittedOn: ticket.createdAt,
-    ticketCount: totalQty,
-    passengers: ticket.passengers,
-    number:
-      ticket.phoneNumber?.code && ticket.phoneNumber?.digits
-        ? ticket.phoneNumber.code + ticket.phoneNumber.digits
-        : 'Not provided',
-    email: ticket.email,
-    departureDate: ticket.departureDate,
-    returnDate: ticket.returnDate,
-    flightDetails: ticket.flightDetails,
-    ticketValidity: ticket.ticketValidity,
-    ticketDelivery: ticket?.ticketDelivery?.immediate,
-    ticketDeliveryDate: ticket?.ticketDelivery?.deliveryDate,
-    message: ticket.message,
-  });
+  // await createContact({
+  //   firstName: capitalCase(ticket.passengers[0].firstName),
+  //   lastName: capitalCase(ticket.passengers[0].lastName),
+  //   email: ticket.email.toLowerCase(),
+  //   from: ticket.from,
+  //   to: ticket.to,
+  //   departureDate: ticket.departureDate,
+  //   returnDate: ticket.returnDate,
+  // });
 
   return ticket;
 };
@@ -163,8 +170,9 @@ exports.handleStripeSuccess = async (session) => {
   if (session.payment_status !== 'paid') return;
 
   const sessionId = session.metadata.sessionId;
-  const currency = (session.currency || 'aed').toUpperCase();
+  const currency = (session.currency || 'usd').toUpperCase();
   const amount = Number((session.amount_total / 100).toFixed(2));
+  const transactionId = session.id;
 
   const ticket = await DummyTicket.findOneAndUpdate(
     { sessionId },
@@ -172,6 +180,7 @@ exports.handleStripeSuccess = async (session) => {
       $set: {
         paymentStatus: 'PAID',
         amountPaid: { currency, amount },
+        transactionId,
         orderStatus: 'PENDING',
       },
     },
@@ -189,14 +198,52 @@ exports.handleStripeSuccess = async (session) => {
   }
 
   await ticketPaymentCompletionEmail({
+    createdAt: ticket.createdAt,
     type: ticket.type,
     from: ticket.from,
     to: ticket.to,
     departureDate: ticket.departureDate,
     returnDate: ticket.returnDate,
-    customer: session.metadata.customer,
+    leadPassenger: ticket.leadPassenger,
     email: ticket.email,
+    number:
+      ticket.phoneNumber?.code && ticket.phoneNumber?.digits
+        ? ticket.phoneNumber.code + ticket.phoneNumber.digits
+        : 'Not provided',
+    flightDetails: ticket?.flightDetails,
+    ticketValidity: ticket?.ticketValidity,
+    ticketDelivery: ticket?.ticketDelivery,
+    passengers: ticket.passengers,
+    message: ticket.message,
   });
+};
+
+exports.refundStripePaymentByTransactionId = async (transactionId) => {
+  const ticket = await DummyTicket.findOne({ transactionId });
+
+  if (!ticket) throw new AppError('Ticket not found', 404);
+  if (ticket.paymentStatus !== 'PAID') throw new AppError('Payment not completed', 400);
+
+  const session = await stripe.checkout.sessions.retrieve(ticket.transactionId);
+
+  if (!session.payment_intent) throw new AppError('PaymentIntent not found', 400);
+
+  const refund = await stripe.refunds.create({
+    payment_intent: session.payment_intent,
+  });
+
+  await DummyTicket.findOneAndUpdate(
+    { transactionId },
+    {
+      $set: {
+        paymentStatus: 'REFUNDED',
+        orderStatus: 'REFUNDED',
+      },
+    },
+    { new: true },
+  );
+
+  return refund;
 };
 
 /* =========================================================

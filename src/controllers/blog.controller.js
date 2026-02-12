@@ -4,7 +4,7 @@ const { deleteCloudinaryFolder } = require('../utils/cloudinary');
 const blogService = require('../services/blog.service');
 const Blog = require('../models/Blog');
 
-exports.getBlogPosts = catchAsync(async (req, res) => {
+exports.getBlogPosts = catchAsync(async (req, res, next) => {
   const page = Number(req.query.page) || 1;
   const limit = Number(req.query.limit) || 10;
   const { status, tag, search } = req.query;
@@ -20,13 +20,15 @@ exports.getBlogPosts = catchAsync(async (req, res) => {
   res.status(200).json({
     status: 'success',
     results: blogs.length,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
+    data: {
+      blogs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     },
-    data: blogs,
   });
 });
 
@@ -56,10 +58,10 @@ exports.getBlogPostById = catchAsync(async (req, res, next) => {
   });
 });
 
-exports.createBlogPost = catchAsync(async (req, res) => {
+exports.createBlogPost = catchAsync(async (req, res, next) => {
   const { title, slug: customSlug, content, excerpt, status, tags, metaTitle, metaDescription } = req.body;
 
-  blogService.validateBlog(req, { requireCoverImage: true });
+  blogService.validateBlog(req, { requireCoverImage: true, requireTitle: true, requireContent: true });
 
   const { uniqueSlug, readingTime } = await blogService.generateSlugAndReadingTime(customSlug, title, content);
 
@@ -77,6 +79,7 @@ exports.createBlogPost = catchAsync(async (req, res) => {
     metaTitle: metaTitle || title,
     metaDescription,
     author: req.user._id,
+    publisher: status === 'published' ? req.user._id : null,
     readingTime,
     publishedAt: status === 'published' ? new Date() : null,
   });
@@ -94,13 +97,24 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
   const blog = await Blog.findById(req.params.id);
   if (!blog) return next(new AppError('Blog not found', 404));
 
-  blogService.validateBlog(req, { requireCoverImage: false });
+  blogService.validateBlog(req, { requireCoverImage: false, requireTitle: false, requireContent: false });
 
-  const normalizedTags = blogService.normalizeTags(req.body.tags);
+  const normalizedTags = req.body.tags === undefined ? undefined : blogService.normalizeTags(req.body.tags);
+  const hasContentUpdate = typeof req.body.content === 'string';
+  const hasStatusUpdate = typeof req.body.status === 'string';
+  const hasSlugUpdate = typeof req.body.slug === 'string';
+  if (hasSlugUpdate && req.body.slug.trim() === '') {
+    return next(new AppError('Slug cannot be empty', 400));
+  }
+
+  let updatedSlug = req.body.slug;
+  if (hasSlugUpdate) {
+    updatedSlug = await blogService.generateUniqueSlugFromInput(req.body.slug, blog._id);
+  }
 
   const updateData = {
     title: req.body.title,
-    slug: req.body.slug,
+    slug: updatedSlug,
     content: req.body.content,
     excerpt: req.body.excerpt,
     status: req.body.status,
@@ -111,7 +125,21 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
 
   Object.keys(updateData).forEach((key) => updateData[key] === undefined && delete updateData[key]);
 
-  updateData.coverImageUrl = await blogService.saveCoverImage(req, blog.slug, blog);
+  if (hasContentUpdate) {
+    updateData.readingTime = blogService.getReadingTime(req.body.content);
+  }
+
+  if (hasStatusUpdate && req.body.status === 'published' && blog.status !== 'published') {
+    updateData.publishedAt = new Date();
+    updateData.publisher = req.user._id;
+  }
+
+  if (hasStatusUpdate && req.body.status === 'draft') {
+    updateData.publishedAt = null;
+    updateData.publisher = null;
+  }
+
+  updateData.coverImageUrl = await blogService.saveCoverImage(req, blog.slug, blog, updateData.slug || blog.slug);
 
   const updatedBlog = await Blog.findByIdAndUpdate(req.params.id, updateData, {
     new: true,
@@ -129,7 +157,7 @@ exports.deleteBlogPost = catchAsync(async (req, res, next) => {
   const blog = await Blog.findById(req.params.id);
   if (!blog) return next(new AppError('Blog post not found', 404));
 
-  const folderName = `mdt/mdt_blog/${blog.slug}`.replace(/\s+/g, '_');
+  const folderName = `dt365/dt365_blog/${blog.slug}`.replace(/\s+/g, '_');
 
   try {
     await deleteCloudinaryFolder(folderName);
@@ -160,8 +188,10 @@ exports.duplicateBlogPost = catchAsync(async (req, res, next) => {
   delete blogObj.__v;
 
   blogObj.title = `${blogObj.title} Copy`;
-  blogObj.slug = `${blogObj.slug}-copy`;
+  blogObj.slug = await blogService.generateUniqueSlugFromInput(`${blogObj.slug}-copy`);
   blogObj.status = 'draft';
+  blogObj.publishedAt = null;
+  blogObj.publisher = null;
 
   const duplicated = await Blog.create(blogObj);
 
@@ -172,7 +202,7 @@ exports.duplicateBlogPost = catchAsync(async (req, res, next) => {
   });
 });
 
-exports.publishBlog = catchAsync(async (req, res) => {
+exports.publishBlog = catchAsync(async (req, res, next) => {
   const updatedBlog = await Blog.findByIdAndUpdate(
     req.params.id,
     {

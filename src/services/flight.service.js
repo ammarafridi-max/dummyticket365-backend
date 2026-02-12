@@ -26,16 +26,38 @@ exports.addAirlineByCode = async (airlineCode) => {
   });
 };
 
-exports.searchFlights = async ({ type, from, to, departureDate, returnDate }) => {
+exports.searchFlights = async ({ type, from, to, departureDate, returnDate, quantity = {} }) => {
   if (!from || !to || !departureDate) {
     throw new AppError('Please provide departure, arrival, and departure date', 400);
   }
 
+  if (type === 'Return' && !returnDate) {
+    throw new AppError('Please provide a return date for return trips', 400);
+  }
+
+  const originLocationCode = extractIataCode(from);
+  const destinationLocationCode = extractIataCode(to);
+
+  if (!originLocationCode || !destinationLocationCode) {
+    throw new AppError('Please provide valid airport selections', 400);
+  }
+
+  const adults = Number(quantity.adults || 1);
+  const children = Number(quantity.children || 0);
+  const infants = Number(quantity.infants || 0);
+  const totalPassengers = adults + children + infants;
+
+  if (adults < 1 || totalPassengers < 1 || totalPassengers > 9) {
+    throw new AppError('Total passengers must be between 1 and 9, with at least 1 adult', 400);
+  }
+
   const params = {
-    originLocationCode: extractIataCode(from),
-    destinationLocationCode: extractIataCode(to),
+    originLocationCode,
+    destinationLocationCode,
     departureDate,
-    adults: 1,
+    adults,
+    ...(children > 0 ? { children } : {}),
+    ...(infants > 0 ? { infants } : {}),
     ...(type === 'Return' && returnDate ? { returnDate } : {}),
   };
 

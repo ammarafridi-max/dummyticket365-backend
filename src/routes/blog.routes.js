@@ -18,7 +18,7 @@ const { protect, restrictTo } = require('../middleware/auth.middleware');
 router.get('/', getBlogPosts);
 router.get('/slug/:slug', getBlogPostBySlug);
 
-router.use(protect, restrictTo('admin', 'blog-manager'));
+router.use(protect, restrictTo('admin'));
 
 router.post('/', upload.single('coverImage'), createBlogPost);
 router.get('/:id', getBlogPostById);

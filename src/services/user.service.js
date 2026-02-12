@@ -2,7 +2,7 @@ const User = require('../models/User');
 const AppError = require('../utils/appError');
 
 exports.getUsers = async () => {
-  return User.find({});
+  return User.find({}).sort({ createdAt: -1 });
 };
 
 exports.getUserByUsername = async (username) => {

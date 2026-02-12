@@ -8,9 +8,11 @@ exports.getAllTickets = catchAsync(async (req, res) => {
   res.status(200).json({
     status: 'success',
     message: 'Tickets fetched',
-    results: result.data.length,
-    pagination: result.pagination,
-    data: result.data,
+    data: {
+      data: result.data,
+      pagination: result.pagination,
+      results: result.data.length,
+    },
   });
 });
 
@@ -22,11 +24,12 @@ exports.getTicket = catchAsync(async (req, res, next) => {
 });
 
 exports.updateOrderStatus = catchAsync(async (req, res, next) => {
-  await ticketService.updateOrderStatus(req.params.sessionId, req.body.userId, req.body.orderStatus);
+  const updated = await ticketService.updateOrderStatus(req.params.sessionId, req.user.id, req.body.orderStatus);
 
   res.status(200).json({
     status: 'success',
-    message: `Order status updated`,
+    message: 'Order status updated',
+    data: updated,
   });
 });
 
@@ -50,4 +53,16 @@ exports.createStripePaymentUrl = catchAsync(async (req, res) => {
   const session = await ticketService.createStripePaymentUrl(req.body);
 
   res.status(200).json({ data: session.url });
+});
+
+exports.refundStripePayment = catchAsync(async (req, res) => {
+  const { transactionId } = req.params;
+
+  const session = await ticketService.refundStripePaymentByTransactionId(transactionId);
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Payment refunded successfully',
+    data: session,
+  });
 });

@@ -40,11 +40,23 @@ exports.getBlogBySlug = async (slug) => {
   return blog;
 };
 
-exports.validateBlog = (req, { requireCoverImage = true } = {}) => {
+exports.validateBlog = (req, { requireCoverImage = true, requireTitle = true, requireContent = true } = {}) => {
   const { title, content } = req.body;
 
-  if (!title || !content) {
-    throw new AppError('Title and content are required', 400);
+  if (requireTitle && !title) {
+    throw new AppError('Title is required', 400);
+  }
+
+  if (requireContent && !content) {
+    throw new AppError('Content is required', 400);
+  }
+
+  if (!requireTitle && title === '') {
+    throw new AppError('Title cannot be empty', 400);
+  }
+
+  if (!requireContent && content === '') {
+    throw new AppError('Content cannot be empty', 400);
   }
 
   if (requireCoverImage && !req.file) {
@@ -59,7 +71,7 @@ exports.normalizeTags = (tags) => {
   return [...new Set(arr.map((t) => t.trim().toLowerCase()))].filter(Boolean);
 };
 
-exports.saveCoverImage = async (req, uniqueSlug, blog = null) => {
+exports.saveCoverImage = async (req, uniqueSlug, blog = null, targetSlug = null) => {
   if (!req.file) return blog?.coverImageUrl;
 
   try {
@@ -67,7 +79,7 @@ exports.saveCoverImage = async (req, uniqueSlug, blog = null) => {
       await deleteCloudinaryFile(blog.coverImageUrl);
     }
 
-    const slug = blog?.slug || uniqueSlug;
+    const slug = targetSlug || blog?.slug || uniqueSlug;
     const folderName = `dt365/dt365_blog/${slug}`.replace(/\s+/g, '_');
 
     return await uploadImageToCloudinary(req.file.buffer, folderName);
@@ -88,3 +100,14 @@ exports.generateSlugAndReadingTime = async (customSlug, title, content) => {
 
   return { uniqueSlug, readingTime };
 };
+
+exports.generateUniqueSlugFromInput = async (input, currentId = null) => {
+  const baseSlug = slugify(input, {
+    lower: true,
+    strict: true,
+  });
+
+  return await generateUniqueSlug(baseSlug, currentId);
+};
+
+exports.getReadingTime = (content = '') => estimateReadingTime(content);

@@ -23,11 +23,9 @@ exports.login = catchAsync(async (req, res) => {
 });
 
 exports.logout = catchAsync(async (req, res) => {
-  res.cookie('jwt', 'loggedout', {
-    expires: new Date(Date.now() + 10 * 1000),
-    httpOnly: true,
-    sameSite: 'none',
-    secure: true,
+  res.cookie('jwt', '', {
+    ...createCookieOptions(),
+    expires: new Date(0),
   });
 
   res.status(200).json({
@@ -57,10 +55,11 @@ exports.currentUserInfo = catchAsync(async (req, res) => {
 });
 
 exports.updateCurrentUser = catchAsync(async (req, res) => {
-  await authService.updateCurrentUser(req.user.id, req.body);
+  const user = await authService.updateCurrentUser(req.user.id, req.body);
 
   res.status(200).json({
     status: 'success',
     message: 'User updated successfully',
+    data: user,
   });
 });

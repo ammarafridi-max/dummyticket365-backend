@@ -16,9 +16,7 @@ const startServer = async () => {
     await connectDB('api');
 
     const server = app.listen(process.env.PORT || 3001, '0.0.0.0', () => {
-      console.log(
-        `Server running on port ${process.env.PORT || 3001} (${process.env.NODE_ENV})`
-      );
+      console.log(`Server running on port ${process.env.PORT || 3001} (${process.env.NODE_ENV})`);
     });
 
     process.on('unhandledRejection', (err) => {

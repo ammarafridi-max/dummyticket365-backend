@@ -61,7 +61,7 @@ const DummyTicketSchema = mongoose.Schema(
     message: { type: String },
     paymentStatus: {
       type: String,
-      enum: ['UNPAID', 'PAID'],
+      enum: ['UNPAID', 'PAID', 'REFUNDED'],
       default: 'UNPAID',
     },
     ticketValidity: {
@@ -84,7 +84,10 @@ const DummyTicketSchema = mongoose.Schema(
     },
     orderStatus: {
       type: String,
-      enum: ['PENDING', 'DELIVERED', 'PROGRESS'],
+      enum: ['PENDING', 'DELIVERED', 'PROGRESS', 'REFUNDED'],
+    },
+    transactionId: {
+      type: String,
     },
     handledBy: { type: mongoose.Schema.ObjectId, ref: 'User', default: null },
   },

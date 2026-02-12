@@ -32,4 +32,4 @@ const sendEmail = async ({ email, name, subject, htmlContent, textContent }) => 
   }
 };
 
-module.exports = sendEmail
+module.exports = sendEmail;

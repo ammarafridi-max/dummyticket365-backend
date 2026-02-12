@@ -8,6 +8,7 @@ exports.login = async ({ email, password }) => {
 
   const user = await User.findOne({ email }).select('+password');
   if (!user) throw new AppError('User does not exist', 404);
+  if (user.status === 'INACTIVE') throw new AppError('User is inactive', 403);
 
   const correct = await user.correctPassword(password, user.password);
   if (!correct) throw new AppError('Incorrect password', 401);
@@ -43,7 +44,13 @@ exports.updateCurrentUser = async (userId, payload) => {
     throw new AppError('Please use /updateMyPassword to change password', 403);
   }
 
-  const user = await User.findByIdAndUpdate(userId, payload, {
+  const allowedFields = ['name', 'email', 'username'];
+  const filteredPayload = Object.keys(payload || {}).reduce((acc, key) => {
+    if (allowedFields.includes(key)) acc[key] = payload[key];
+    return acc;
+  }, {});
+
+  const user = await User.findByIdAndUpdate(userId, filteredPayload, {
     new: true,
     runValidators: true,
   });
