@@ -7,6 +7,7 @@ const userRoutes = require('./user.routes');
 const emailRoutes = require('./email.routes');
 const blogRoutes = require('./blog.routes');
 const authRoutes = require('./auth.routes');
+const affiliateRoutes = require('./affiliate.routes');
 
 router.use('/ticket', ticketRoutes);
 router.use('/insurance', insuranceRoutes);
@@ -16,5 +17,6 @@ router.use('/users', userRoutes);
 router.use('/email', emailRoutes);
 router.use('/blogs', blogRoutes);
 router.use('/auth', authRoutes);
+router.use('/affiliates', affiliateRoutes);
 
 module.exports = router;
