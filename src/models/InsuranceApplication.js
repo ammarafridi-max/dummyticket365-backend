@@ -43,6 +43,10 @@ const InsuranceApplicationSchema = new mongoose.Schema(
     },
     passengers: [PassengerSchema],
     email: { type: String, required: true, match: /^\S+@\S+\.\S+$/ },
+    address1: { type: String },
+    address2: { type: String },
+    address3: { type: String },
+    address4: { type: String },
     mobile: {
       code: { type: String },
       digits: { type: String },

@@ -4,6 +4,7 @@ require('dotenv').config({ path: `.env.${process.env.NODE_ENV}` });
 const mongoose = require('mongoose');
 const app = require('./app');
 const connectDB = require('./utils/db');
+const { publishDueScheduledBlogs } = require('./services/blog.service');
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION! 💥 Shutting down...');
@@ -14,6 +15,12 @@ process.on('uncaughtException', (err) => {
 const startServer = async () => {
   try {
     await connectDB('api');
+    await publishDueScheduledBlogs();
+    setInterval(() => {
+      publishDueScheduledBlogs().catch((err) => {
+        console.error('Scheduled blog publisher failed:', err.message);
+      });
+    }, 60 * 1000);
 
     const server = app.listen(process.env.PORT || 3001, '0.0.0.0', () => {
       console.log(`Server running on port ${process.env.PORT || 3001} (${process.env.NODE_ENV})`);

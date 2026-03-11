@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Affiliate = require('../models/Affiliate');
+const DummyTicket = require('../models/DummyTicket');
 const AppError = require('../utils/appError');
 
 function buildSearchFilter(q) {
@@ -32,6 +33,28 @@ function parseSort(sort = 'newest') {
   if (sortMap[sort]) return sortMap[sort];
 
   return { createdAt: -1 };
+}
+
+function buildCreatedAtRange(query = {}) {
+  const range = {};
+
+  if (query.startDate) {
+    const start = new Date(query.startDate);
+    if (!Number.isNaN(start.getTime())) {
+      start.setHours(0, 0, 0, 0);
+      range.$gte = start;
+    }
+  }
+
+  if (query.endDate) {
+    const end = new Date(query.endDate);
+    if (!Number.isNaN(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+      range.$lte = end;
+    }
+  }
+
+  return Object.keys(range).length ? range : null;
 }
 
 function normalizeCreatePayload(payload = {}) {
@@ -181,4 +204,89 @@ exports.seedAffiliates = async () => {
   }
 
   return created;
+};
+
+exports.getAffiliateStatsById = async (id, query = {}) => {
+  const affiliate = await exports.getAffiliateById(id);
+  const createdAtRange = buildCreatedAtRange(query);
+  const match = { affiliate: affiliate._id };
+
+  if (createdAtRange) {
+    match.createdAt = createdAtRange;
+  }
+
+  const [summary] = await DummyTicket.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: null,
+        totalTickets: { $sum: 1 },
+        paidTickets: {
+          $sum: {
+            $cond: [{ $eq: ['$paymentStatus', 'PAID'] }, 1, 0],
+          },
+        },
+        unpaidTickets: {
+          $sum: {
+            $cond: [{ $eq: ['$paymentStatus', 'UNPAID'] }, 1, 0],
+          },
+        },
+        paidRevenue: {
+          $sum: {
+            $cond: [{ $eq: ['$paymentStatus', 'PAID'] }, { $ifNull: ['$amountPaid.amount', 0] }, 0],
+          },
+        },
+      },
+    },
+  ]);
+
+  return {
+    affiliateId: affiliate.affiliateId,
+    dateRange: {
+      startDate: query.startDate || null,
+      endDate: query.endDate || null,
+    },
+    totalTickets: summary?.totalTickets || 0,
+    paidTickets: summary?.paidTickets || 0,
+    unpaidTickets: summary?.unpaidTickets || 0,
+    paidRevenue: {
+      currency: 'USD',
+      amount: Number((summary?.paidRevenue || 0).toFixed(2)),
+    },
+  };
+};
+
+exports.getAffiliateTicketsById = async (id, query = {}) => {
+  const affiliate = await exports.getAffiliateById(id);
+  let page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.max(1, parseInt(query.limit, 10) || 20);
+
+  const filter = { affiliate: affiliate._id };
+  if (query.paymentStatus && ['PAID', 'UNPAID', 'REFUNDED'].includes(query.paymentStatus)) {
+    filter.paymentStatus = query.paymentStatus;
+  }
+
+  const total = await DummyTicket.countDocuments(filter);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  if (page > totalPages) page = totalPages;
+
+  const tickets = await DummyTicket.find(filter)
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .select(
+      'sessionId passengers email paymentStatus orderStatus amountPaid totalAmount from to departureDate returnDate createdAt',
+    );
+
+  return {
+    tickets,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    },
+  };
 };

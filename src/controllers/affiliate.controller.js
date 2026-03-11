@@ -74,3 +74,25 @@ exports.seedAffiliates = catchAsync(async (req, res) => {
     errors: null,
   });
 });
+
+exports.getAffiliateStatsById = catchAsync(async (req, res) => {
+  const stats = await affiliateService.getAffiliateStatsById(req.params.id, req.query || {});
+
+  return res.status(200).json({
+    success: true,
+    data: stats,
+    message: 'Affiliate stats fetched successfully',
+    errors: null,
+  });
+});
+
+exports.getAffiliateTicketsById = catchAsync(async (req, res) => {
+  const data = await affiliateService.getAffiliateTicketsById(req.params.id, req.query || {});
+
+  return res.status(200).json({
+    success: true,
+    data,
+    message: 'Affiliate tickets fetched successfully',
+    errors: null,
+  });
+});

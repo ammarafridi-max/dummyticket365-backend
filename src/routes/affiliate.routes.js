@@ -5,6 +5,8 @@ const { protect, restrictTo } = require('../middleware/auth.middleware');
 router.use(protect, restrictTo('admin'));
 
 router.post('/seed', affiliateController.seedAffiliates);
+router.get('/:id/stats', affiliateController.getAffiliateStatsById);
+router.get('/:id/tickets', affiliateController.getAffiliateTicketsById);
 
 router.route('/').get(affiliateController.getAffiliates).post(affiliateController.createAffiliate);
 

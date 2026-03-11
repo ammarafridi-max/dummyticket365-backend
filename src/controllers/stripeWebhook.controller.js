@@ -1,6 +1,5 @@
 const { verifyStripeSignature } = require('../utils/stripe');
 const ticketService = require('../services/ticket.service');
-const insuranceService = require('../services/insurance.service');
 const StripeWebhookEvent = require('../models/StripeWebhookEvent');
 
 exports.stripeWebhook = async (req, res) => {
@@ -39,10 +38,6 @@ exports.stripeWebhook = async (req, res) => {
     switch (productType) {
       case 'ticket':
         await ticketService.handleStripeSuccess(session);
-        break;
-
-      case 'insurance':
-        await insuranceService.handleStripeSuccess(session);
         break;
 
       default:

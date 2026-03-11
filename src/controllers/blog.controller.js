@@ -5,16 +5,19 @@ const blogService = require('../services/blog.service');
 const Blog = require('../models/Blog');
 
 exports.getBlogPosts = catchAsync(async (req, res, next) => {
+  await blogService.publishDueScheduledBlogs();
+
   const page = Number(req.query.page) || 1;
   const limit = Number(req.query.limit) || 10;
-  const { status, tag, search } = req.query;
+  const { status, tag, search, author } = req.query;
 
-  const { blogs, total } = await blogService.getBlogs({
+  const { blogs, pagination } = await blogService.getBlogs({
     page,
     limit,
     status,
     tag,
     search,
+    author,
   });
 
   res.status(200).json({
@@ -22,17 +25,14 @@ exports.getBlogPosts = catchAsync(async (req, res, next) => {
     results: blogs.length,
     data: {
       blogs,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination,
     },
   });
 });
 
 exports.getBlogPostBySlug = catchAsync(async (req, res, next) => {
+  await blogService.publishDueScheduledBlogs();
+
   const blog = await blogService.getBlogBySlug(req.params.slug);
 
   if (!blog) {
@@ -60,12 +60,21 @@ exports.getBlogPostById = catchAsync(async (req, res, next) => {
 
 exports.createBlogPost = catchAsync(async (req, res, next) => {
   const { title, slug: customSlug, content, excerpt, status, tags, metaTitle, metaDescription } = req.body;
+  const requestedStatus = status || 'draft';
+  const scheduledAt = blogService.parseScheduledAt(req.body.scheduledAt);
 
   blogService.validateBlog(req, { requireCoverImage: true, requireTitle: true, requireContent: true });
+  if (requestedStatus === 'scheduled' && !scheduledAt) {
+    return next(new AppError('Scheduled date/time is required when status is scheduled', 400));
+  }
+  if (requestedStatus === 'scheduled' && scheduledAt <= new Date()) {
+    return next(new AppError('Scheduled date/time must be in the future', 400));
+  }
 
   const { uniqueSlug, readingTime } = await blogService.generateSlugAndReadingTime(customSlug, title, content);
 
   const normalizedTags = blogService.normalizeTags(tags);
+  const resolvedTags = await blogService.ensureTagsExist(normalizedTags);
   const coverImageUrl = await blogService.saveCoverImage(req, uniqueSlug);
 
   const blog = await Blog.create({
@@ -74,14 +83,15 @@ exports.createBlogPost = catchAsync(async (req, res, next) => {
     content,
     excerpt,
     coverImageUrl,
-    status: status || 'draft',
-    tags: normalizedTags,
+    status: requestedStatus,
+    tags: resolvedTags,
     metaTitle: metaTitle || title,
     metaDescription,
     author: req.user._id,
-    publisher: status === 'published' ? req.user._id : null,
+    publisher: requestedStatus === 'published' ? req.user._id : null,
     readingTime,
-    publishedAt: status === 'published' ? new Date() : null,
+    publishedAt: requestedStatus === 'published' ? new Date() : null,
+    scheduledAt: requestedStatus === 'scheduled' ? scheduledAt : null,
   });
 
   await blog.populate('author');
@@ -99,9 +109,13 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
 
   blogService.validateBlog(req, { requireCoverImage: false, requireTitle: false, requireContent: false });
 
-  const normalizedTags = req.body.tags === undefined ? undefined : blogService.normalizeTags(req.body.tags);
+  let normalizedTags = req.body.tags === undefined ? undefined : blogService.normalizeTags(req.body.tags);
+  if (normalizedTags !== undefined) {
+    normalizedTags = await blogService.ensureTagsExist(normalizedTags);
+  }
   const hasContentUpdate = typeof req.body.content === 'string';
   const hasStatusUpdate = typeof req.body.status === 'string';
+  const hasScheduledAtUpdate = Object.prototype.hasOwnProperty.call(req.body, 'scheduledAt');
   const hasSlugUpdate = typeof req.body.slug === 'string';
   if (hasSlugUpdate && req.body.slug.trim() === '') {
     return next(new AppError('Slug cannot be empty', 400));
@@ -121,6 +135,7 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
     tags: normalizedTags,
     metaTitle: req.body.metaTitle,
     metaDescription: req.body.metaDescription,
+    scheduledAt: hasScheduledAtUpdate ? blogService.parseScheduledAt(req.body.scheduledAt) : undefined,
   };
 
   Object.keys(updateData).forEach((key) => updateData[key] === undefined && delete updateData[key]);
@@ -132,11 +147,27 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
   if (hasStatusUpdate && req.body.status === 'published' && blog.status !== 'published') {
     updateData.publishedAt = new Date();
     updateData.publisher = req.user._id;
+    updateData.scheduledAt = null;
   }
 
   if (hasStatusUpdate && req.body.status === 'draft') {
     updateData.publishedAt = null;
     updateData.publisher = null;
+    updateData.scheduledAt = null;
+  }
+
+  if (hasStatusUpdate && req.body.status === 'scheduled') {
+    const finalScheduledAt = hasScheduledAtUpdate ? updateData.scheduledAt : blog.scheduledAt;
+    if (!finalScheduledAt) {
+      return next(new AppError('Scheduled date/time is required when status is scheduled', 400));
+    }
+    if (finalScheduledAt <= new Date()) {
+      return next(new AppError('Scheduled date/time must be in the future', 400));
+    }
+
+    updateData.publishedAt = null;
+    updateData.publisher = null;
+    updateData.scheduledAt = finalScheduledAt;
   }
 
   updateData.coverImageUrl = await blogService.saveCoverImage(req, blog.slug, blog, updateData.slug || blog.slug);
@@ -157,7 +188,7 @@ exports.deleteBlogPost = catchAsync(async (req, res, next) => {
   const blog = await Blog.findById(req.params.id);
   if (!blog) return next(new AppError('Blog post not found', 404));
 
-  const folderName = `dt365/dt365_blog/${blog.slug}`.replace(/\s+/g, '_');
+  const folderName = `mdt/mdt_blog/${blog.slug}`.replace(/\s+/g, '_');
 
   try {
     await deleteCloudinaryFolder(folderName);
@@ -183,6 +214,7 @@ exports.duplicateBlogPost = catchAsync(async (req, res, next) => {
   delete blogObj.createdAt;
   delete blogObj.updatedAt;
   delete blogObj.publishedAt;
+  delete blogObj.scheduledAt;
   delete blogObj.author;
   delete blogObj.publisher;
   delete blogObj.__v;
@@ -209,6 +241,7 @@ exports.publishBlog = catchAsync(async (req, res, next) => {
       status: 'published',
       publishedAt: new Date(),
       publisher: req.user._id,
+      scheduledAt: null,
     },
     { new: true, runValidators: true },
   );

@@ -13,8 +13,30 @@ const handleDuplicateFieldsDB = (err) => {
 };
 
 const handleValidationErrorDB = (err) => {
-  const errors = Object.values(err.errors).map((el) => el.message);
-  const message = `Invalid input data. ${errors.join('. ')}`;
+  const errors = Object.values(err.errors).map((el) => {
+    const field = el.path || 'field';
+    const label = field.charAt(0).toUpperCase() + field.slice(1);
+
+    if (el.kind === 'maxlength' && el.properties?.maxlength) {
+      return `${label} must be at most ${el.properties.maxlength} characters.`;
+    }
+
+    if (el.kind === 'minlength' && el.properties?.minlength) {
+      return `${label} must be at least ${el.properties.minlength} characters.`;
+    }
+
+    if (el.kind === 'required') {
+      return `${label} is required.`;
+    }
+
+    if (el.kind === 'enum' && Array.isArray(el.properties?.enumValues)) {
+      return `${label} must be one of: ${el.properties.enumValues.join(', ')}.`;
+    }
+
+    return el.message || `${label} is invalid.`;
+  });
+
+  const message = errors.join(' ');
   return new AppError(message, 400);
 };
 
@@ -23,7 +45,7 @@ const handleJWTError = () => new AppError('Invalid token. Please log in again!',
 const handleJWTExpiredError = () => new AppError('Your token has expired! Please log in again.', 401);
 
 const sendErrorDev = (err, res) => {
-  console.log(err);
+  console.error(err);
   res.status(err.statusCode).json({
     status: err.status,
     error: err,

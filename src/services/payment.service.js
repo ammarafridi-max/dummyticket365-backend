@@ -3,7 +3,7 @@ const AppError = require('../utils/appError');
 
 exports.createCheckoutSession = async ({
   amount,
-  currency = 'aed',
+  currency = 'usd',
   productName,
   customerEmail,
   successUrl,

@@ -30,7 +30,7 @@ const blogSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['draft', 'published'],
+      enum: ['draft', 'published', 'scheduled'],
       default: 'draft',
       index: true,
     },
@@ -55,6 +55,10 @@ const blogSchema = new mongoose.Schema(
     publishedAt: {
       type: Date,
     },
+    scheduledAt: {
+      type: Date,
+      index: true,
+    },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } },
 );
@@ -66,8 +70,17 @@ blogSchema.pre('save', function () {
     this.publishedAt = new Date();
   }
 
+  if (this.status === 'published') {
+    this.scheduledAt = null;
+  }
+
+  if (this.status === 'scheduled' && !this.scheduledAt) {
+    this.status = 'draft';
+  }
+
   if (this.status === 'draft') {
     this.publishedAt = null;
+    this.scheduledAt = null;
   }
 });
 
