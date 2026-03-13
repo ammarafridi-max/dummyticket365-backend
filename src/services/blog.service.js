@@ -99,6 +99,40 @@ exports.normalizeTags = (tags) => {
   });
 };
 
+exports.parseFaqs = (faqs) => {
+  if (faqs === undefined) return undefined;
+  if (faqs === null || faqs === '') return [];
+
+  let parsed = faqs;
+
+  if (typeof faqs === 'string') {
+    try {
+      parsed = JSON.parse(faqs);
+    } catch (err) {
+      void err;
+      throw new AppError('Invalid FAQs format', 400);
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new AppError('FAQs must be an array', 400);
+  }
+
+  return parsed
+    .map((faq) => ({
+      question: String(faq?.question || '').trim(),
+      answer: String(faq?.answer || '').trim(),
+    }))
+    .filter((faq) => faq.question || faq.answer)
+    .map((faq) => {
+      if (!faq.question || !faq.answer) {
+        throw new AppError('Each FAQ must include both a question and an answer', 400);
+      }
+
+      return faq;
+    });
+};
+
 exports.ensureTagsExist = async (tags = []) => {
   if (!Array.isArray(tags) || tags.length === 0) return [];
 
