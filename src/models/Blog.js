@@ -41,6 +41,11 @@ const blogSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    quickAnswer: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+    },
     coverImageUrl: {
       type: String,
       required: [true, 'A blog post must have a cover image'],

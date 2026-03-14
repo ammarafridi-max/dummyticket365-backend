@@ -59,7 +59,17 @@ exports.getBlogPostById = catchAsync(async (req, res, next) => {
 });
 
 exports.createBlogPost = catchAsync(async (req, res, next) => {
-  const { title, slug: customSlug, content, excerpt, status, tags, metaTitle, metaDescription } = req.body;
+  const {
+    title,
+    slug: customSlug,
+    content,
+    excerpt,
+    quickAnswer,
+    status,
+    tags,
+    metaTitle,
+    metaDescription,
+  } = req.body;
   const requestedStatus = status || 'draft';
   const scheduledAt = blogService.parseScheduledAt(req.body.scheduledAt);
   const faqs = blogService.parseFaqs(req.body.faqs) || [];
@@ -83,6 +93,7 @@ exports.createBlogPost = catchAsync(async (req, res, next) => {
     slug: uniqueSlug,
     content,
     excerpt,
+    quickAnswer,
     coverImageUrl,
     status: requestedStatus,
     tags: resolvedTags,
@@ -134,6 +145,7 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
     slug: updatedSlug,
     content: req.body.content,
     excerpt: req.body.excerpt,
+    quickAnswer: req.body.quickAnswer,
     status: req.body.status,
     tags: normalizedTags,
     faqs,
