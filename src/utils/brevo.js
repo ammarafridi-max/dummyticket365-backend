@@ -47,7 +47,6 @@ exports.createContact = async ({ firstName, lastName, email, from, to, departure
     throw new Error('Brevo sync failed');
   }
 
-  console.log('Brevo sync:', data);
   return true;
 };
 
@@ -68,6 +67,5 @@ exports.markPaid = async (email) => {
     throw new Error('Brevo markPaid failed');
   }
 
-  console.log('Brevo markPaid:', data);
   return true;
 };

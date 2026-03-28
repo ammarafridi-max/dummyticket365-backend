@@ -163,8 +163,9 @@ const downloadWISInsuranceDocuments = async (policyId) => {
   return policy_documents;
 };
 
-const createInsuranceMongoDbDocument = async (body, policy_id, premium = null) => {
+const createInsuranceMongoDbDocument = async (body, policy_id, premium = null, currency = null) => {
   const normalizedAmount = premium === null || premium === undefined ? null : Number(premium);
+  const normalizedCurrency = currency ? String(currency).toUpperCase() : null;
 
   return await InsuranceApplication.create({
     sessionId: body.sessionId,
@@ -194,7 +195,7 @@ const createInsuranceMongoDbDocument = async (body, policy_id, premium = null) =
     amountPaid:
       normalizedAmount !== null && !Number.isNaN(normalizedAmount)
         ? {
-            currency: 'AED',
+            currency: normalizedCurrency || 'USD',
             amount: normalizedAmount,
           }
         : undefined,
@@ -226,7 +227,7 @@ const confirmDirectPayInsurance = async (sessionId) => {
         policyNumber,
         paymentStatus: 'PAID',
         amountPaid: {
-          currency: 'AED',
+          currency: application?.amountPaid?.currency || 'USD',
           amount: application?.amountPaid?.amount || 0,
         },
         transactionId: `WIS_DIRECTPAY_${application.policyId}`,

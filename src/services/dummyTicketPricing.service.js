@@ -42,7 +42,7 @@ function sanitizeOptions(options = []) {
 
     return {
       validity,
-      price,
+      price: Number(price.toFixed(2)),
       isActive,
       sortOrder,
     };

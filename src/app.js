@@ -22,13 +22,17 @@ app.use(
     origin: [
       'http://localhost:5173',
       'http://localhost:5174',
+      'http://localhost:3000',
       'https://www.dummyticket365.com',
+      'https://dummyticket365.com',
+      'https://test.dummyticket365.com',
       'https://admin.dummyticket365.com',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Origin', 'x-session-id'],
     exposedHeaders: ['Set-Cookie'],
+    maxAge: 600,
   }),
 );
 

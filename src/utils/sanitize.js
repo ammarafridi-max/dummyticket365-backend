@@ -1,7 +1,7 @@
 const sanitizeHtml = require('sanitize-html');
 
-const richTextFields = ['content', 'body', 'description'];
-const richTextRoutes = ['/api/blogs', '/api/articles', '/api/posts'];
+const richTextFields = ['content', 'body', 'description', 'metaTitle', 'metaDescription', 'name'];
+const richTextRoutes = ['/api/blogs', '/api/articles', '/api/posts', '/api/blog-tags'];
 
 const skipFields = ['password', 'passwordCurrent', 'passwordConfirm'];
 

@@ -311,9 +311,7 @@ exports.handleStripeSuccess = async (session) => {
         amountPaid: { currency, amount },
         transactionId,
         orderStatus: 'PENDING',
-        ...(shouldClearAffiliateAttribution
-          ? { affiliate: null, affiliateId: null, affiliateCapturedAt: null }
-          : {}),
+        ...(shouldClearAffiliateAttribution ? { affiliate: null, affiliateId: null, affiliateCapturedAt: null } : {}),
       },
     },
     { new: true },
