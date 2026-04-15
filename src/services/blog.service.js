@@ -4,22 +4,32 @@ const slugify = require('slugify');
 const AppError = require('../utils/appError');
 const { uploadImageToCloudinary, deleteCloudinaryFile } = require('../utils/cloudinary');
 const { generateUniqueSlug, estimateReadingTime } = require('../utils/blogHelper');
+const logger = require('../utils/logger');
+
+function escapeRegex(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeOptionalText(value) {
+  if (value === undefined || value === null) return undefined;
+  return String(value).trim();
+}
 
 exports.getBlogs = async ({ page, limit, status, tag, search, author }) => {
   let currentPage = Math.max(1, parseInt(page, 10) || 1);
   const pageSize = Math.max(1, parseInt(limit, 10) || 10);
   const filter = {};
-  const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   if (status && status !== 'all') filter.status = status;
   if (tag && tag !== 'all') filter.tags = new RegExp(`^${escapeRegex(tag)}$`, 'i');
   if (author && author !== 'all') filter.author = author;
 
   if (search) {
+    const regex = new RegExp(escapeRegex(search), 'i');
     filter.$or = [
-      { title: new RegExp(search, 'i') },
-      { excerpt: new RegExp(search, 'i') },
-      { content: new RegExp(search, 'i') },
+      { title: regex },
+      { excerpt: regex },
+      { content: regex },
     ];
   }
 
@@ -31,7 +41,7 @@ exports.getBlogs = async ({ page, limit, status, tag, search, author }) => {
     .sort({ createdAt: -1 })
     .skip((currentPage - 1) * pageSize)
     .limit(pageSize)
-    .populate('author');
+    .populate(exports.getBlogPopulation());
 
   const result = {
     blogs,
@@ -53,12 +63,24 @@ exports.getBlogBySlug = async (slug) => {
   const blog = await Blog.findOne({
     slug,
     status: 'published',
-  }).populate('author');
+  }).populate(exports.getBlogPopulation());
 
   if (!blog) return null;
 
   return blog;
 };
+
+exports.getBlogPopulation = () => [
+  { path: 'author', select: 'name username email role status createdAt updatedAt' },
+  { path: 'publisher', select: 'name username email role status createdAt updatedAt' },
+];
+
+exports.normalizeBlogMetadata = (payload = {}) => ({
+  excerpt: normalizeOptionalText(payload.excerpt),
+  quickAnswer: normalizeOptionalText(payload.quickAnswer),
+  metaTitle: normalizeOptionalText(payload.metaTitle),
+  metaDescription: normalizeOptionalText(payload.metaDescription),
+});
 
 exports.validateBlog = (req, { requireCoverImage = true, requireTitle = true, requireContent = true } = {}) => {
   const { title, content } = req.body;
@@ -170,20 +192,18 @@ exports.ensureTagsExist = async (tags = []) => {
   return [...new Set(resolved)];
 };
 
-exports.saveCoverImage = async (req, uniqueSlug, blog = null, targetSlug = null) => {
-  if (!req.file) return blog?.coverImageUrl;
+exports.saveCoverImage = async (req, blogId, existingImageUrl = null) => {
+  if (!req.file) return existingImageUrl;
 
   try {
-    if (blog?.coverImageUrl) {
-      await deleteCloudinaryFile(blog.coverImageUrl);
+    if (existingImageUrl) {
+      await deleteCloudinaryFile(existingImageUrl);
     }
 
-    const slug = targetSlug || blog?.slug || uniqueSlug;
-    const folderName = `mdt/mdt_blog/${slug}`.replace(/\s+/g, '_');
-
+    const folderName = `dt365/blog/${blogId}`;
     return await uploadImageToCloudinary(req.file.buffer, folderName);
   } catch (err) {
-    console.error('Cover image upload failed:', err);
+    logger.error('Cover image upload failed', { error: err, blogId });
     throw new AppError('Failed to upload cover image', 500);
   }
 };

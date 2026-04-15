@@ -73,6 +73,7 @@ const DummyTicketSchema = mongoose.Schema(
       immediate: { type: Boolean },
       deliveryDate: { type: String },
     },
+    adminDeliveryEmailSent: { type: Boolean, default: false },
     flightDetails: {
       departureFlight: FlightSchema,
       returnFlight: { type: FlightSchema, default: null },
@@ -80,7 +81,7 @@ const DummyTicketSchema = mongoose.Schema(
     totalAmount: { type: Number },
     currency: {
       type: String,
-      default: 'USD',
+      default: 'AED',
       uppercase: true,
       trim: true,
     },
@@ -95,7 +96,7 @@ const DummyTicketSchema = mongoose.Schema(
     transactionId: {
       type: String,
     },
-    handledBy: { type: mongoose.Schema.ObjectId, ref: 'User', default: null },
+    handledBy: { type: mongoose.Schema.ObjectId, ref: 'AdminUser', default: null },
     affiliateId: {
       type: String,
       trim: true,

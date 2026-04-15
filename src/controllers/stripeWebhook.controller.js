@@ -40,6 +40,9 @@ exports.stripeWebhook = async (req, res) => {
         await ticketService.handleStripeSuccess(session);
         break;
 
+      case 'insurance':
+        break;
+
       default:
         console.error('❌ Unknown productType:', productType, 'metadata:', session.metadata);
         break;

@@ -1,10 +1,38 @@
+const mongoose = require('mongoose');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 const { deleteCloudinaryFolder } = require('../utils/cloudinary');
 const blogService = require('../services/blog.service');
 const Blog = require('../models/Blog');
+const logger = require('../utils/logger');
 
 exports.getBlogPosts = catchAsync(async (req, res, next) => {
+  await blogService.publishDueScheduledBlogs();
+
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const { tag, search, author } = req.query;
+
+  const { blogs, pagination } = await blogService.getBlogs({
+    page,
+    limit,
+    status: 'published',
+    tag,
+    search,
+    author,
+  });
+
+  res.status(200).json({
+    status: 'success',
+    results: blogs.length,
+    data: {
+      blogs,
+      pagination,
+    },
+  });
+});
+
+exports.getAdminBlogPosts = catchAsync(async (req, res, next) => {
   await blogService.publishDueScheduledBlogs();
 
   const page = Number(req.query.page) || 1;
@@ -46,7 +74,7 @@ exports.getBlogPostBySlug = catchAsync(async (req, res, next) => {
 });
 
 exports.getBlogPostById = catchAsync(async (req, res, next) => {
-  const blog = await Blog.findById(req.params.id).populate('author');
+  const blog = await Blog.findById(req.params.id).populate(blogService.getBlogPopulation());
 
   if (!blog) {
     return next(new AppError('Blog post not found', 404));
@@ -83,23 +111,26 @@ exports.createBlogPost = catchAsync(async (req, res, next) => {
   }
 
   const { uniqueSlug, readingTime } = await blogService.generateSlugAndReadingTime(customSlug, title, content);
+  const metadata = blogService.normalizeBlogMetadata({ excerpt, quickAnswer, metaTitle, metaDescription });
 
   const normalizedTags = blogService.normalizeTags(tags);
   const resolvedTags = await blogService.ensureTagsExist(normalizedTags);
-  const coverImageUrl = await blogService.saveCoverImage(req, uniqueSlug);
+  const blogId = new mongoose.Types.ObjectId();
+  const coverImageUrl = await blogService.saveCoverImage(req, blogId);
 
   const blog = await Blog.create({
+    _id: blogId,
     title,
     slug: uniqueSlug,
     content,
-    excerpt,
-    quickAnswer,
+    excerpt: metadata.excerpt,
+    quickAnswer: metadata.quickAnswer,
     coverImageUrl,
     status: requestedStatus,
     tags: resolvedTags,
     faqs,
-    metaTitle: metaTitle || title,
-    metaDescription,
+    metaTitle: metadata.metaTitle || title,
+    metaDescription: metadata.metaDescription,
     author: req.user._id,
     publisher: requestedStatus === 'published' ? req.user._id : null,
     readingTime,
@@ -107,7 +138,7 @@ exports.createBlogPost = catchAsync(async (req, res, next) => {
     scheduledAt: requestedStatus === 'scheduled' ? scheduledAt : null,
   });
 
-  await blog.populate('author');
+  await blog.populate(blogService.getBlogPopulation());
 
   res.status(201).json({
     status: 'success',
@@ -144,13 +175,10 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
     title: req.body.title,
     slug: updatedSlug,
     content: req.body.content,
-    excerpt: req.body.excerpt,
-    quickAnswer: req.body.quickAnswer,
+    ...blogService.normalizeBlogMetadata(req.body),
     status: req.body.status,
     tags: normalizedTags,
     faqs,
-    metaTitle: req.body.metaTitle,
-    metaDescription: req.body.metaDescription,
     scheduledAt: hasScheduledAtUpdate ? blogService.parseScheduledAt(req.body.scheduledAt) : undefined,
   };
 
@@ -186,12 +214,12 @@ exports.updateBlogPost = catchAsync(async (req, res, next) => {
     updateData.scheduledAt = finalScheduledAt;
   }
 
-  updateData.coverImageUrl = await blogService.saveCoverImage(req, blog.slug, blog, updateData.slug || blog.slug);
+  updateData.coverImageUrl = await blogService.saveCoverImage(req, blog._id, blog.coverImageUrl);
 
   const updatedBlog = await Blog.findByIdAndUpdate(req.params.id, updateData, {
     new: true,
     runValidators: true,
-  }).populate('author');
+  }).populate(blogService.getBlogPopulation());
 
   res.status(200).json({
     status: 'success',
@@ -204,12 +232,12 @@ exports.deleteBlogPost = catchAsync(async (req, res, next) => {
   const blog = await Blog.findById(req.params.id);
   if (!blog) return next(new AppError('Blog post not found', 404));
 
-  const folderName = `mdt/mdt_blog/${blog.slug}`.replace(/\s+/g, '_');
+  const folderName = `dt365/blog/${blog._id}`;
 
   try {
     await deleteCloudinaryFolder(folderName);
   } catch (err) {
-    console.error('Failed to delete Cloudinary folder:', err);
+    logger.warn('Failed to delete Cloudinary folder', { folderName, error: err });
   }
 
   await Blog.findByIdAndDelete(req.params.id);
@@ -240,8 +268,11 @@ exports.duplicateBlogPost = catchAsync(async (req, res, next) => {
   blogObj.status = 'draft';
   blogObj.publishedAt = null;
   blogObj.publisher = null;
+  blogObj.author = req.user._id;
+  blogObj.scheduledAt = null;
 
   const duplicated = await Blog.create(blogObj);
+  await duplicated.populate(blogService.getBlogPopulation());
 
   res.status(201).json({
     status: 'success',
@@ -260,7 +291,7 @@ exports.publishBlog = catchAsync(async (req, res, next) => {
       scheduledAt: null,
     },
     { new: true, runValidators: true },
-  );
+  ).populate(blogService.getBlogPopulation());
 
   res.status(200).json({
     status: 'success',

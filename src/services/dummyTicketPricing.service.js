@@ -2,9 +2,9 @@ const AppError = require('../utils/appError');
 const DummyTicketPricing = require('../models/DummyTicketPricing');
 
 const DEFAULT_OPTIONS = [
-  { validity: '2 Days', price: 13, isActive: true, sortOrder: 0 },
-  { validity: '7 Days', price: 20, isActive: true, sortOrder: 1 },
-  { validity: '14 Days', price: 23, isActive: true, sortOrder: 2 },
+  { validity: '2 Days', price: 49, isActive: true, sortOrder: 0 },
+  { validity: '7 Days', price: 69, isActive: true, sortOrder: 1 },
+  { validity: '14 Days', price: 79, isActive: true, sortOrder: 2 },
 ];
 
 const ALLOWED_VALIDITIES = new Set(DEFAULT_OPTIONS.map((option) => option.validity));
@@ -57,7 +57,7 @@ async function ensureDummyTicketPricing() {
 
   config = await DummyTicketPricing.create({
     key: 'dummy-ticket',
-    currency: 'USD',
+    currency: 'AED',
     options: DEFAULT_OPTIONS,
   });
 
@@ -87,7 +87,7 @@ exports.updateDummyTicketPricing = async ({ currency, options, updatedBy }) => {
   const config = await ensureDummyTicketPricing();
   const sanitizedOptions = sanitizeOptions(options);
 
-  config.currency = String(currency || config.currency || 'USD').toUpperCase();
+  config.currency = String(currency || config.currency || 'AED').toUpperCase();
   config.options = sanitizedOptions;
   config.updatedBy = updatedBy || null;
   await config.save();
@@ -108,7 +108,7 @@ exports.getDummyTicketUnitPrice = async (ticketValidity) => {
   }
 
   return {
-    currency: config.currency || 'USD',
+    currency: config.currency || 'AED',
     unitPrice: option.price,
   };
 };

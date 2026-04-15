@@ -6,7 +6,10 @@ const AppError = require('../utils/appError');
 function buildSearchFilter(q) {
   if (!q) return {};
 
-  const regex = new RegExp(q.trim(), 'i');
+  const escaped = String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!escaped) return {};
+
+  const regex = new RegExp(escaped, 'i');
 
   return {
     $or: [{ name: regex }, { email: regex }, { affiliateId: regex }],
@@ -18,6 +21,14 @@ function parseBooleanFilter(value) {
   if (value === true || value === 'true') return true;
   if (value === false || value === 'false') return false;
   return undefined;
+}
+
+function normalizeName(value) {
+  return String(value || '').trim();
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function parseSort(sort = 'newest') {
@@ -59,8 +70,8 @@ function buildCreatedAtRange(query = {}) {
 
 function normalizeCreatePayload(payload = {}) {
   return {
-    name: payload.name,
-    email: payload.email,
+    name: normalizeName(payload.name),
+    email: normalizeEmail(payload.email),
     commissionPercent: payload.commissionPercent,
     isActive: payload.isActive,
   };
@@ -72,7 +83,9 @@ function normalizeUpdatePayload(payload = {}) {
 
   allowed.forEach((field) => {
     if (payload[field] !== undefined) {
-      updateData[field] = payload[field];
+      if (field === 'name') updateData[field] = normalizeName(payload[field]);
+      else if (field === 'email') updateData[field] = normalizeEmail(payload[field]);
+      else updateData[field] = payload[field];
     }
   });
 
@@ -102,7 +115,7 @@ exports.getAffiliates = async (query = {}) => {
   const limit = Math.max(1, parseInt(query.limit, 10) || 20);
 
   const filter = {
-    ...buildSearchFilter(query.q),
+    ...buildSearchFilter(query.q || query.search),
   };
 
   const isActive = parseBooleanFilter(query.isActive);
@@ -154,6 +167,10 @@ exports.updateAffiliateById = async (id, payload) => {
     throw new AppError('affiliateId cannot be updated', 400);
   }
 
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'email')) {
+    throw new AppError('Affiliate email cannot be updated', 400);
+  }
+
   const updateData = normalizeUpdatePayload(payload);
   const affiliate = await Affiliate.findByIdAndUpdate(id, updateData, {
     new: true,
@@ -172,10 +189,17 @@ exports.deleteAffiliateById = async (id) => {
     throw new AppError('Invalid affiliate ID', 400);
   }
 
-  const affiliate = await Affiliate.findByIdAndDelete(id);
+  const affiliate = await Affiliate.findById(id);
   if (!affiliate) {
     throw new AppError('Affiliate not found', 404);
   }
+
+  const linkedTickets = await DummyTicket.countDocuments({ affiliate: affiliate._id });
+  if (linkedTickets > 0) {
+    throw new AppError('Affiliate cannot be deleted while linked tickets exist', 400);
+  }
+
+  await Affiliate.findByIdAndDelete(id);
 
   return affiliate;
 };
@@ -240,6 +264,9 @@ exports.getAffiliateStatsById = async (id, query = {}) => {
     },
   ]);
 
+  const paidRevenueAmount = Number((summary?.paidRevenue || 0).toFixed(2));
+  const totalCommissionAmount = Number(((paidRevenueAmount * Number(affiliate.commissionPercent || 0)) / 100).toFixed(2));
+
   return {
     affiliateId: affiliate.affiliateId,
     dateRange: {
@@ -250,9 +277,14 @@ exports.getAffiliateStatsById = async (id, query = {}) => {
     paidTickets: summary?.paidTickets || 0,
     unpaidTickets: summary?.unpaidTickets || 0,
     paidRevenue: {
-      currency: 'USD',
-      amount: Number((summary?.paidRevenue || 0).toFixed(2)),
+      currency: 'AED',
+      amount: paidRevenueAmount,
     },
+    totalCommission: {
+      currency: 'AED',
+      amount: totalCommissionAmount,
+    },
+    totalRevenue: paidRevenueAmount,
   };
 };
 

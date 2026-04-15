@@ -1,4 +1,5 @@
 const AppError = require('../utils/appError');
+const logger = require('../utils/logger');
 
 const handleCastErrorDB = (err) => {
   const message = `Invalid ${err.path}: ${err.value}.`;
@@ -44,49 +45,77 @@ const handleJWTError = () => new AppError('Invalid token. Please log in again!',
 
 const handleJWTExpiredError = () => new AppError('Your token has expired! Please log in again.', 401);
 
-const sendErrorDev = (err, res) => {
-  console.error(err);
+const handleJsonParseError = () => new AppError('Malformed JSON in request body.', 400);
+
+const handlePayloadTooLargeError = () => new AppError('Request body is too large.', 413);
+
+const logError = (err, req) => {
+  const meta = {
+    requestId: req?.id,
+    method: req?.method,
+    path: req?.originalUrl,
+    error: err,
+  };
+
+  if (err.statusCode >= 500 || !err.isOperational) {
+    logger.error('Request failed', meta);
+    return;
+  }
+
+  logger.warn('Operational request error', meta);
+};
+
+const sendErrorDev = (err, req, res) => {
+  logError(err, req);
   res.status(err.statusCode).json({
     status: err.status,
     error: err,
     message: err.message,
     stack: err.stack,
+    requestId: req.id,
   });
 };
 
-const sendErrorProd = (err, res) => {
+const sendErrorProd = (err, req, res) => {
   if (err.isOperational) {
     return res.status(err.statusCode).json({
       status: err.status,
       message: err.message,
+      requestId: req.id,
     });
   }
-  console.error('💥 UNEXPECTED ERROR:', err);
+  logError(err, req);
 
   return res.status(500).json({
     status: 'error',
     message: 'Something went very wrong!',
+    requestId: req.id,
   });
 };
 
 module.exports = (err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 
+  if (err.type === 'entity.parse.failed') err = handleJsonParseError();
+  if (err.type === 'entity.too.large') err = handlePayloadTooLargeError();
+
   if (process.env.NODE_ENV === 'development') {
-    return sendErrorDev(err, res);
+    return sendErrorDev(err, req, res);
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    let error = err;
+  let error = err;
 
-    if (error.name === 'CastError') error = handleCastErrorDB(error);
-    if (error.code === 11000) error = handleDuplicateFieldsDB(error);
-    if (error.name === 'ValidationError') error = handleValidationErrorDB(error);
+  if (error.name === 'CastError') error = handleCastErrorDB(error);
+  if (error.code === 11000) error = handleDuplicateFieldsDB(error);
+  if (error.name === 'ValidationError') error = handleValidationErrorDB(error);
 
-    if (error.name === 'JsonWebTokenError') error = handleJWTError();
-    if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
+  if (error.name === 'JsonWebTokenError') error = handleJWTError();
+  if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
 
-    return sendErrorProd(error, res);
-  }
+  return sendErrorProd(error, req, res);
 };

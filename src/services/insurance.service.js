@@ -1,90 +1,58 @@
+const { randomBytes } = require('crypto');
 const AppError = require('../utils/appError');
+const Affiliate = require('../models/Affiliate');
 const InsuranceApplication = require('../models/InsuranceApplication');
 const { insurancePaymentCompletionEmail } = require('./notification.service');
-
-const WIS_URL = process.env.WIS_URL;
-const WIS_AGENCY_ID = process.env.WIS_AGENCY_ID;
-const WIS_AGENCY_CODE = process.env.WIS_AGENCY_CODE;
-
-const formatDateISO = (value) => {
-  if (!value) return value;
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toISOString().slice(0, 10);
-};
-
-async function fetchWIS(slug, data = {}) {
-  const res = await fetch(`${WIS_URL}/${slug}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agency_id: WIS_AGENCY_ID, agency_code: WIS_AGENCY_CODE, ...data }),
-  });
-
-  const json = await res.json();
-
-  if (json.status === 'failed') {
-    throw new AppError(json?.errors?.[0] || 'Insurance provider error', 502);
-  }
-
-  return json.result;
-}
+const brevo = require('../utils/brevo');
+const logger = require('../utils/logger');
+const {
+  fetchWISNationalities,
+  fetchWISInsuranceQuotes,
+  finalizeWISInsurance,
+  issueWISInsurance,
+  purchaseWISInsurance,
+  sendWISEmail,
+  downloadWISInsuranceDocuments,
+  buildWISQuotePayload,
+  buildWISFinalizePayload,
+} = require('../utils/wis');
 
 const validateForm = (body) => {
-  if (!body.startDate) {
-    throw new AppError('Start date is missing');
-  }
-
-  if (!body.endDate) {
-    throw new AppError('End date is missing');
-  }
-
-  if (!body.region) {
-    throw new AppError('Region is missing');
-  }
-
   const { adults = 0, children = 0, seniors = 0 } = body.quantity || {};
   const totalPeople = adults + children + seniors;
 
-  if (adults < 1 || totalPeople === 0) {
-    throw new AppError('Please select at least 1 adult');
-  }
+  if (!body.startDate) throw new AppError('Start date is missing');
+  if (!body.endDate) throw new AppError('End date is missing');
+  if (!body.region) throw new AppError('Region is missing');
+  if (adults < 1 || totalPeople === 0) throw new AppError('Please select at least 1 adult');
 };
 
-const formatFormBody = (body) => {
-  const formattedBody = {
-    journey_id: body.journeyType,
-    start_date: formatDateISO(body.startDate),
-    end_date: formatDateISO(body.endDate),
-    region: body.region,
-    age_bands: body.quantity,
-    family: 0,
-    group: 0,
-  };
-
-  const { adults = 0, children = 0, seniors = 0 } = formattedBody.age_bands;
-  const totalPeople = adults + children + seniors;
-
-  if (totalPeople === 1) {
-    formattedBody.family = 1;
-    formattedBody.group = 1;
-  } else if (adults === 2 && children > 0 && children <= 4 && seniors === 0) {
-    formattedBody.family = 2;
-    formattedBody.group = 1;
-  } else {
-    formattedBody.family = 1;
-    formattedBody.group = 2;
+const validateCreateBody = (body) => {
+  if (!body.email) throw new AppError('Email address is required', 400);
+  if (!body.streetAddress) throw new AppError('Address is required', 400);
+  if (!body.city) throw new AppError('City is required', 400);
+  if (!body.country) throw new AppError('Country is required', 400);
+  if (!body.mobile || !body.mobile.digits) throw new AppError('Phone number is required', 400);
+  if (!Array.isArray(body.passengers) || body.passengers.length === 0) {
+    throw new AppError('At least one passenger is required', 400);
   }
-
-  return formattedBody;
+  body.passengers.forEach((pax, i) => {
+    const n = i + 1;
+    if (!pax.firstName) throw new AppError(`Passenger ${n}: first name is required`, 400);
+    if (!pax.lastName) throw new AppError(`Passenger ${n}: last name is required`, 400);
+    if (!pax.dob) throw new AppError(`Passenger ${n}: date of birth is required`, 400);
+    if (!pax.passport) throw new AppError(`Passenger ${n}: passport number is required`, 400);
+    if (!pax.nationality) throw new AppError(`Passenger ${n}: nationality is required`, 400);
+  });
 };
 
 const validateApplicationBody = (body) => {
   if (!body.quoteId) throw new AppError('Quote ID missing');
   if (!body.schemeId) throw new AppError('Scheme ID missing');
   if (!body.email) throw new AppError('Email address not entered');
-  if (!body.address1) throw new AppError('Address is missing');
-  if (!body.address3) throw new AppError('City is missing');
-  if (!body.address4) throw new AppError('Country is missing');
+  if (!body.streetAddress) throw new AppError('Address is missing');
+  if (!body.city) throw new AppError('City is missing');
+  if (!body.country) throw new AppError('Country is missing');
   if (!body.mobile || !body.mobile.digits) throw new AppError('Phone Number missing');
   if (!Array.isArray(body.passengers) || body.passengers.length === 0) {
     throw new AppError('At least one passenger is required');
@@ -101,83 +69,55 @@ const validateApplicationBody = (body) => {
   return true;
 };
 
-const formatApplicationBody = (body) => {
-  const data = {};
+const resolveAffiliateForApplication = async (affiliateIdInput) => {
+  const normalizedAffiliateId = String(affiliateIdInput || '').trim();
+  if (!normalizedAffiliateId) return null;
 
-  data.quote_id = body.quoteId;
-  data.scheme_id = body.schemeId;
-  data.title_customer = body.passengers[0].title;
-  data.first_name_customer = body.passengers[0].firstName;
-  data.last_name_customer = body.passengers[0].lastName;
-  data.email = body.email;
-  data.mobile = body.mobile.code + body.mobile.digits;
-  data.address1 = body.address1;
-  data.address2 = body.address2 || '';
-  data.address3 = body.address3;
-  data.address4 = body.address4;
-  data.custom_redirect_failed_url = `${process.env.DT365_FRONTEND}/travel-insurance/passenger-details?paymentStatus=FAILED`;
-  data.custom_redirect_success_url = `${process.env.DT365_FRONTEND}/travel-insurance/payment?sessionId=${body.sessionId}&paymentStatus=PAID`;
+  const affiliate = await Affiliate.findOne({
+    affiliateId: normalizedAffiliateId,
+    isActive: true,
+  }).select('_id affiliateId name email commissionPercent isActive');
 
-  data.title_traveller = body.passengers.map((passenger) => passenger.title);
-  data.first_name_traveller = body.passengers.map((passenger) => passenger.firstName);
-  data.last_name_traveller = body.passengers.map((passenger) => passenger.lastName);
-  data.dob = body.passengers.map((passenger) => formatDateISO(passenger.dob));
-  data.passport_number = body.passengers.map((passenger) => passenger.passport);
-  data.nationality_traveller = body.passengers.map((passenger) => passenger?.nationality?.id || null);
+  if (!affiliate) {
+    throw new AppError('Affiliate not found or inactive', 400);
+  }
 
-  return data;
+  return affiliate;
 };
 
-const fetchWISNationalities = async () => {
-  const { nationalities } = await fetchWIS('quote/outbound/nationalities');
-  return nationalities;
+const generatePaymentSyncToken = () => randomBytes(24).toString('hex');
+
+const serializeApplicationForClient = (application, syncStatus) => {
+  if (!application) {
+    return application;
+  }
+
+  const payload = typeof application.toObject === 'function' ? application.toObject() : { ...application };
+  delete payload.paymentSyncToken;
+
+  if (syncStatus) {
+    payload.syncStatus = syncStatus;
+  }
+
+  return payload;
 };
 
-const fetchWISInsuranceQuotes = async (data) => {
-  const { quotes, quote_id } = await fetchWIS('quote/outbound/premium', data);
-  return { quotes, quote_id };
-};
-
-const finalizeWISInsurance = async (data) => {
-  const { policy_id, premium, currency, directpay } = await fetchWIS('quote/outbound/finalise', data);
-  return { policy_id, premium, currency, directpay };
-};
-
-const issueWISInsurance = async (policyId) => {
-  const { policy_number } = await fetchWIS('quote/outbound/issued', { policy_id: policyId });
-  return policy_number;
-};
-
-const purchaseWISInsurance = async (policyId) => {
-  const { policy_number } = await fetchWIS('quote/outbound/purchase', { policy_id: policyId });
-  return policy_number;
-};
-
-const sendWISEmail = async (policyId) => {
-  const { policy_id } = await fetchWIS('policy/outbound/email', { policy_id: policyId });
-  return { policy_id };
-};
-
-const downloadWISInsuranceDocuments = async (policyId) => {
-  const { policy_documents } = await fetchWIS('policy/outbound/documents', { policy_id: policyId });
-  return policy_documents;
-};
-
-const createInsuranceMongoDbDocument = async (body, policy_id, premium = null, currency = null) => {
-  const normalizedAmount = premium === null || premium === undefined ? null : Number(premium);
-  const normalizedCurrency = currency ? String(currency).toUpperCase() : null;
+const createInsuranceMongoDbDocument = async (body) => {
+  const affiliate = await resolveAffiliateForApplication(body.affiliateId);
 
   return await InsuranceApplication.create({
     sessionId: body.sessionId,
-    quoteId: body.quoteId,
-    schemeId: body.schemeId,
-    policyId: policy_id,
+    affiliate: affiliate?._id || null,
+    affiliateId: affiliate?.affiliateId || null,
+    quoteId: body.quoteId != null ? String(body.quoteId) : undefined,
+    schemeId: body.schemeId != null ? String(body.schemeId) : undefined,
     journeyType: body.journeyType,
     startDate: body.startDate,
     endDate: body.endDate,
     region: body.region,
     quantity: body.quantity || {},
     passengers: body.passengers.map((pax) => ({
+      type: pax.type,
       title: pax.title,
       firstName: pax.firstName,
       lastName: pax.lastName,
@@ -187,35 +127,124 @@ const createInsuranceMongoDbDocument = async (body, policy_id, premium = null, c
       passport: pax.passport,
     })),
     email: body.email,
-    address1: body.address1,
-    address2: body.address2 || '',
-    address3: body.address3,
-    address4: body.address4,
+    streetAddress: body.streetAddress,
+    addressLine2: body.addressLine2 || '',
+    city: body.city,
+    country: body.country,
     mobile: body.mobile,
-    amountPaid:
-      normalizedAmount !== null && !Number.isNaN(normalizedAmount)
-        ? {
-            currency: normalizedCurrency || 'USD',
-            amount: normalizedAmount,
-          }
-        : undefined,
     paymentStatus: 'UNPAID',
   });
 };
 
-const confirmDirectPayInsurance = async (sessionId) => {
-  const application = await InsuranceApplication.findOne({ sessionId });
+const finalizeInsuranceMongoDbDocument = async (sessionId, policyId, premium, currency, paymentSyncToken) => {
+  const normalizedAmount = premium != null ? Number(premium) : undefined;
+  const normalizedCurrency = currency != null ? String(currency).toUpperCase() : undefined;
+
+  const application = await InsuranceApplication.findOneAndUpdate(
+    { sessionId },
+    {
+      $set: {
+        policyId,
+        paymentStatus: 'PENDING',
+        issuanceStatus: 'PENDING',
+        paymentSyncToken,
+        paymentReturnStatus: 'PENDING',
+        paymentVerifiedAt: null,
+        issuedAt: null,
+        ...(normalizedAmount !== undefined && !Number.isNaN(normalizedAmount)
+          ? { amountPaid: { currency: normalizedCurrency, amount: normalizedAmount } }
+          : {}),
+      },
+    },
+    { new: true, runValidators: true },
+  );
+
+  if (!application) throw new AppError('Insurance application not found. Please restart the booking.', 404);
+
+  return application;
+};
+
+const confirmDirectPayInsurance = async (sessionId, paymentSyncToken, paymentReturnStatus = 'PAID') => {
+  const normalizedToken = String(paymentSyncToken || '').trim();
+  const application = await InsuranceApplication.findOne({ sessionId }).select('+paymentSyncToken');
+
   if (!application) {
     throw new AppError('Insurance application not found', 404);
   }
 
-  if (application.paymentStatus === 'PAID') {
-    return application;
+  if (!normalizedToken || !application.paymentSyncToken || normalizedToken !== application.paymentSyncToken) {
+    throw new AppError('Invalid payment confirmation token', 403);
   }
 
-  const policyNumber = await issueWISInsurance(application.policyId);
+  if (paymentReturnStatus && paymentReturnStatus !== 'PAID') {
+    const failedApplication = await InsuranceApplication.findOneAndUpdate(
+      { sessionId },
+      {
+        $set: {
+          paymentStatus: 'FAILED',
+          issuanceStatus: 'FAILED',
+          paymentReturnStatus,
+        },
+      },
+      { new: true },
+    );
+
+    return {
+      ...serializeApplicationForClient(failedApplication),
+      syncStatus: 'FAILED',
+    };
+  }
+
+  if (application.paymentStatus === 'PAID' && application.issuanceStatus === 'ISSUED') {
+    return serializeApplicationForClient(application, 'ISSUED');
+  }
+
+  let policyNumber;
+
+  try {
+    policyNumber = await issueWISInsurance(application.policyId);
+  } catch (err) {
+    logger.warn('WIS issue confirmation is still pending or unavailable', {
+      sessionId,
+      policyId: application.policyId,
+      error: err,
+    });
+
+    const pendingApplication = await InsuranceApplication.findOneAndUpdate(
+      { sessionId },
+      {
+        $set: {
+          paymentStatus: 'PENDING',
+          issuanceStatus: 'PENDING',
+          paymentReturnStatus: 'PAID',
+        },
+      },
+      { new: true },
+    );
+
+    return {
+      ...serializeApplicationForClient(pendingApplication),
+      syncStatus: 'PENDING_CONFIRMATION',
+    };
+  }
+
   if (!policyNumber) {
-    throw new AppError('Unable to confirm payment from WIS');
+    const pendingApplication = await InsuranceApplication.findOneAndUpdate(
+      { sessionId },
+      {
+        $set: {
+          paymentStatus: 'PENDING',
+          issuanceStatus: 'PENDING',
+          paymentReturnStatus: 'PAID',
+        },
+      },
+      { new: true },
+    );
+
+    return {
+      ...serializeApplicationForClient(pendingApplication),
+      syncStatus: 'PENDING_CONFIRMATION',
+    };
   }
 
   await sendWISEmail(application.policyId);
@@ -226,8 +255,12 @@ const confirmDirectPayInsurance = async (sessionId) => {
       $set: {
         policyNumber,
         paymentStatus: 'PAID',
+        issuanceStatus: 'ISSUED',
+        paymentReturnStatus: 'PAID',
+        paymentVerifiedAt: new Date(),
+        issuedAt: new Date(),
         amountPaid: {
-          currency: application?.amountPaid?.currency || 'USD',
+          currency: application?.amountPaid?.currency || 'AED',
           amount: application?.amountPaid?.amount || 0,
         },
         transactionId: `WIS_DIRECTPAY_${application.policyId}`,
@@ -252,14 +285,25 @@ const confirmDirectPayInsurance = async (sessionId) => {
     mobile: updated?.mobile?.code && updated?.mobile?.digits ? `${updated.mobile.code}${updated.mobile.digits}` : '',
   });
 
-  return updated;
+  try {
+    await brevo.updateContactAttribute({ email: updated.email, attribute: 'PAYMENT_STATUS', value: 'PAID' });
+  } catch (err) {
+    logger.warn('Brevo updateContactAttribute failed', {
+      email: updated.email,
+      paymentStatus: 'PAID',
+      error: err,
+    });
+  }
+
+  return serializeApplicationForClient(updated, 'ISSUED');
 };
 
 module.exports = {
   validateForm,
+  validateCreateBody,
   validateApplicationBody,
-  formatFormBody,
-  formatApplicationBody,
+  buildWISQuotePayload,
+  buildWISFinalizePayload,
   fetchWISNationalities,
   fetchWISInsuranceQuotes,
   finalizeWISInsurance,
@@ -268,5 +312,8 @@ module.exports = {
   sendWISEmail,
   downloadWISInsuranceDocuments,
   createInsuranceMongoDbDocument,
+  finalizeInsuranceMongoDbDocument,
   confirmDirectPayInsurance,
+  resolveAffiliateForApplication,
+  generatePaymentSyncToken,
 };

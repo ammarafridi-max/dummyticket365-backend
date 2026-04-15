@@ -39,6 +39,24 @@ async function ensureUniqueName(name, excludeId = null) {
   return normalized;
 }
 
+async function ensureUniqueSlug(slugInput, excludeId = null) {
+  const normalized = buildBaseSlug(slugInput);
+  if (!normalized) {
+    throw new AppError('Tag slug is required', 400);
+  }
+
+  const existing = await BlogTag.findOne({
+    slug: normalized,
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+  }).lean();
+
+  if (existing) {
+    throw new AppError('A tag with this slug already exists', 400);
+  }
+
+  return normalized;
+}
+
 async function buildUniqueCopyName(baseName) {
   const original = normalizeName(baseName);
   let candidate = `${original} Copy`;
@@ -91,12 +109,25 @@ exports.getAllBlogTags = catchAsync(async (req, res) => {
   const search = String(req.query.search || '').trim();
   const filter = search ? { name: new RegExp(escapeRegex(search), 'i') } : {};
 
-  const tags = await BlogTag.find(filter).sort({ createdAt: -1 });
+  const tags = await BlogTag.find(filter).sort({ createdAt: -1 }).lean();
+  const tagNames = tags.map((tag) => tag.name);
+  const usage = tagNames.length
+    ? await Blog.aggregate([
+        { $unwind: '$tags' },
+        { $match: { tags: { $in: tagNames } } },
+        { $group: { _id: '$tags', count: { $sum: 1 } } },
+      ])
+    : [];
+  const usageMap = new Map(usage.map((entry) => [entry._id, entry.count]));
+  const enrichedTags = tags.map((tag) => ({
+    ...tag,
+    usageCount: usageMap.get(tag.name) || 0,
+  }));
 
   res.status(200).json({
     status: 'success',
-    results: tags.length,
-    data: tags,
+    results: enrichedTags.length,
+    data: enrichedTags,
   });
 });
 
@@ -134,10 +165,11 @@ exports.getBlogTagById = catchAsync(async (req, res, next) => {
 
 exports.createBlogTag = catchAsync(async (req, res) => {
   const name = await ensureUniqueName(req.body.name);
+  const slug = req.body.slug ? await ensureUniqueSlug(req.body.slug) : await buildUniqueSlug(name);
 
   const created = await BlogTag.create({
     name,
-    slug: await buildUniqueSlug(name),
+    slug,
     description: decodeHtmlEntities(req.body.description || ''),
     metaTitle: decodeHtmlEntities(req.body.metaTitle || ''),
     metaDescription: decodeHtmlEntities(req.body.metaDescription || ''),
@@ -158,6 +190,10 @@ exports.updateBlogTag = catchAsync(async (req, res, next) => {
 
   if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
     tag.name = await ensureUniqueName(req.body.name, tag._id);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body, 'slug')) {
+    tag.slug = await ensureUniqueSlug(req.body.slug, tag._id);
+  } else if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
     tag.slug = await buildUniqueSlug(tag.name, tag._id);
   }
   if (Object.prototype.hasOwnProperty.call(req.body, 'description')) {

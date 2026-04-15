@@ -1,9 +1,9 @@
-const { stripe } = require('../utils/stripe');
+const { getStripeClient } = require('../utils/stripe');
 const AppError = require('../utils/appError');
 
 exports.createCheckoutSession = async ({
   amount,
-  currency = 'usd',
+  currency = 'aed',
   productName,
   customerEmail,
   successUrl,
@@ -17,7 +17,7 @@ exports.createCheckoutSession = async ({
     throw new AppError('Invalid payment amount', 400);
   }
 
-  const session = await stripe.checkout.sessions.create(
+  const session = await getStripeClient().checkout.sessions.create(
     {
       mode: 'payment',
       payment_method_types: ['card'],

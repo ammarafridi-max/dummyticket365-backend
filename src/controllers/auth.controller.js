@@ -37,7 +37,7 @@ exports.logout = catchAsync(async (req, res) => {
 exports.updatePassword = catchAsync(async (req, res) => {
   const user = await authService.updatePassword({
     userId: req.user.id,
-    passwordCurrent: req.body.passwordCurrent,
+    passwordCurrent: req.body.passwordCurrent || req.body.currentPassword,
     passwordNew: req.body.password,
   });
 
@@ -49,7 +49,7 @@ exports.currentUserInfo = catchAsync(async (req, res) => {
 
   res.status(200).json({
     status: 'success',
-    message: 'User data fetched successfully',
+    message: 'Admin user data fetched successfully',
     data: user,
   });
 });
@@ -59,7 +59,7 @@ exports.updateCurrentUser = catchAsync(async (req, res) => {
 
   res.status(200).json({
     status: 'success',
-    message: 'User updated successfully',
+    message: 'Admin user updated successfully',
     data: user,
   });
 });

@@ -40,11 +40,16 @@ const currencySchema = new mongoose.Schema(
 
 currencySchema.pre('save', async function () {
   if (this.isBaseCurrency) {
-    const existingBase = await mongoose.model('Currency').findOne({ isBaseCurrency: true });
-    if (existingBase && existingBase._id.toString() !== this._id.toString()) {
-      throw new Error('Only one base currency can be marked as base.');
-    }
+    this.rate = 1;
   }
 });
+
+currencySchema.index(
+  { isBaseCurrency: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { isBaseCurrency: true },
+  },
+);
 
 module.exports = mongoose.model('Currency', currencySchema);

@@ -33,7 +33,14 @@ function normalizeOptionalRate(value) {
 
 function normalizeOptionalBoolean(value) {
   if (value === undefined) return undefined;
-  return Boolean(value);
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+
+  throw new AppError('Base currency flag must be true or false', 400);
 }
 
 exports.createCurrencySchema = (body = {}) => ({

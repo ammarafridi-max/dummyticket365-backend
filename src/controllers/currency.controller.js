@@ -2,7 +2,7 @@ const catchAsync = require('../utils/catchAsync');
 const currencyService = require('../services/currency.service');
 
 exports.getCurrencies = catchAsync(async (req, res) => {
-  const currencies = await currencyService.getCurrencies();
+  const currencies = await currencyService.getCurrencies(req.query || {});
   res.status(200).json({
     status: 'success',
     data: currencies,

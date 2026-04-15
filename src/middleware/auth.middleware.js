@@ -2,23 +2,34 @@ const { promisify } = require('util');
 const jwt = require('jsonwebtoken');
 const AppError = require('../utils/appError');
 const catchAsync = require('../utils/catchAsync');
-const User = require('../models/User');
+const AdminUser = require('../models/AdminUser');
 
-exports.protect = catchAsync(async (req, res, next) => {
+async function decodeJwtFromCookie(req, missingMessage, invalidMessage) {
   const token = req.cookies?.jwt;
 
   if (!token || token === 'loggedout') {
-    return next(new AppError('You need to login to access this route.', 401));
+    throw new AppError(missingMessage, 401);
   }
 
-  let decoded;
   try {
-    decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+    return await promisify(jwt.verify)(token, process.env.JWT_SECRET);
   } catch {
-    return next(new AppError('Invalid or expired token.', 401));
+    throw new AppError(invalidMessage, 401);
+  }
+}
+
+exports.protect = catchAsync(async (req, res, next) => {
+  const decoded = await decodeJwtFromCookie(
+    req,
+    'You need to login to access this route.',
+    'Invalid or expired token.',
+  );
+
+  if (decoded.type && decoded.type !== 'admin') {
+    return next(new AppError('Invalid session type.', 401));
   }
 
-  const currentUser = await User.findById(decoded.id);
+  const currentUser = await AdminUser.findById(decoded.id);
 
   if (!currentUser || currentUser.status === 'INACTIVE') {
     return next(new AppError('The user belonging to this token does not exist.', 401));

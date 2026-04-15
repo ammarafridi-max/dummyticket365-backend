@@ -35,7 +35,7 @@ const DummyTicketPricingSchema = new mongoose.Schema(
     },
     currency: {
       type: String,
-      default: 'USD',
+      default: 'AED',
       uppercase: true,
       trim: true,
     },
@@ -45,7 +45,7 @@ const DummyTicketPricingSchema = new mongoose.Schema(
     },
     updatedBy: {
       type: mongoose.Schema.ObjectId,
-      ref: 'User',
+      ref: 'AdminUser',
       default: null,
     },
   },

@@ -56,8 +56,8 @@ const blogSchema = new mongoose.Schema(
       default: 'draft',
       index: true,
     },
-    author: { type: mongoose.Schema.ObjectId, ref: 'User', default: null },
-    publisher: { type: mongoose.Schema.ObjectId, ref: 'User', default: null },
+    author: { type: mongoose.Schema.ObjectId, ref: 'AdminUser', default: null },
+    publisher: { type: mongoose.Schema.ObjectId, ref: 'AdminUser', default: null },
     tags: {
       type: [String],
       default: [],

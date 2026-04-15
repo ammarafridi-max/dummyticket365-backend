@@ -1,18 +1,29 @@
 const cloudinary = require('cloudinary').v2;
+const AppError = require('./appError');
+const config = require('./config');
+const logger = require('./logger');
 
-if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-  console.warn('⚠️ Cloudinary credentials are missing');
+const isConfigured = Boolean(
+  config.cloudinary.cloudName && config.cloudinary.apiKey && config.cloudinary.apiSecret,
+);
+
+if (!isConfigured) {
+  logger.warn('Cloudinary credentials are missing');
 }
 
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: config.cloudinary.cloudName,
+  api_key: config.cloudinary.apiKey,
+  api_secret: config.cloudinary.apiSecret,
 });
 
 exports.cloudinary = cloudinary;
 
 exports.uploadImageToCloudinary = async (buffer, folder) => {
+  if (!isConfigured) {
+    throw new AppError('Image upload service is not configured', 500);
+  }
+
   return new Promise((resolve, reject) => {
     cloudinary.uploader
       .upload_stream({ folder }, (err, result) => {
@@ -25,20 +36,24 @@ exports.uploadImageToCloudinary = async (buffer, folder) => {
 
 exports.deleteCloudinaryFile = async (imageUrl) => {
   try {
-    if (!imageUrl) return;
+    if (!isConfigured || !imageUrl) return false;
 
     const match = imageUrl.match(/upload\/(?:v\d+\/)?(.+)\.[a-zA-Z0-9]+$/);
-    if (!match || !match[1]) return;
+    if (!match || !match[1]) return false;
 
     const publicId = match[1];
     await cloudinary.uploader.destroy(publicId, { invalidate: true });
+    return true;
   } catch (err) {
-    console.error('Failed to delete Cloudinary file:', err.message);
+    logger.warn('Failed to delete Cloudinary file', { imageUrl, error: err });
+    return false;
   }
 };
 
 exports.deleteCloudinaryFolder = async (folderPath) => {
   try {
+    if (!isConfigured || !folderPath) return false;
+
     const { resources } = await cloudinary.api.resources({
       type: 'upload',
       prefix: folderPath,
@@ -50,7 +65,9 @@ exports.deleteCloudinaryFolder = async (folderPath) => {
     }
 
     await cloudinary.api.delete_folder(folderPath);
+    return true;
   } catch (err) {
-    console.error('Cloudinary cleanup failed:', err.message);
+    logger.warn('Cloudinary cleanup failed', { folderPath, error: err });
+    return false;
   }
 };

@@ -5,6 +5,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const {
   createBlogPost,
   getBlogPosts,
+  getAdminBlogPosts,
   getBlogPostBySlug,
   getBlogPostById,
   updateBlogPost,
@@ -18,8 +19,9 @@ const { protect, restrictTo } = require('../middleware/auth.middleware');
 router.get('/', getBlogPosts);
 router.get('/slug/:slug', getBlogPostBySlug);
 
-router.use(protect, restrictTo('admin'));
+router.use(protect, restrictTo('admin', 'blog-manager'));
 
+router.get('/admin/list', getAdminBlogPosts);
 router.post('/', upload.single('coverImage'), createBlogPost);
 router.get('/:id', getBlogPostById);
 router.patch('/:id', upload.single('newCoverImage'), updateBlogPost);
